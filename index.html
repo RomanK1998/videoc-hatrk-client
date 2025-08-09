@@ -16,25 +16,40 @@
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; // сюда вставь URL сервера с Render
+    const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
     const socket = io(SERVER_URL);
-    const peerConnection = new RTCPeerConnection();
+    let peerConnection;
+    let localStream;
+
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-      });
+    async function init() {
+      // Получаем камеру и микрофон
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localVideo.srcObject = localStream;
 
-    peerConnection.ontrack = event => {
-      remoteVideo.srcObject = event.streams[0];
-    };
+      // Создаём соединение
+      peerConnection = new RTCPeerConnection();
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    peerConnection.onicecandidate = event => {
-      if (event.candidate) socket.emit("ice-candidate", event.candidate);
-    };
+      peerConnection.ontrack = event => {
+        remoteVideo.srcObject = event.streams[0];
+      };
+
+      peerConnection.onicecandidate = event => {
+        if (event.candidate) socket.emit("ice-candidate", event.candidate);
+      };
+
+      // Если это первый подключившийся — он создаёт оффер
+      socket.emit("join");
+    }
+
+    socket.on("create-offer", async () => {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit("offer", offer);
+    });
 
     socket.on("offer", async (offer) => {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -55,13 +70,7 @@
       }
     });
 
-    async function createOffer() {
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      socket.emit("offer", offer);
-    }
-
-    setTimeout(createOffer, 2000);
+    init();
   </script>
 </body>
 </html>
