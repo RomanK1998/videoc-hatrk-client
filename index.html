@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
-<link rel="icon" type="image/png" href="favicon.png?v=2">
+<link rel="icon" type="image/png" href="favicon.png?v=3">
 <style>
     body {
         background-color: black;
@@ -99,9 +99,9 @@ async function createPeerConnection() {
         }
     };
 
-    // Запуск замера скорости
-    measureConnectionSpeed(peerConnection, "speed-local");
-    measureConnectionSpeed(peerConnection, "speed-remote");
+    // Запуск замера скорости отдельно для локального и удалённого потока
+    measureConnectionSpeed(peerConnection, "speed-local", "outbound-rtp");
+    measureConnectionSpeed(peerConnection, "speed-remote", "inbound-rtp");
 }
 
 // Получение оффера
@@ -141,18 +141,20 @@ startLocalStream().then(() => {
 });
 
 // ======= Функции замера скорости =======
-async function measureConnectionSpeed(pc, elementId) {
+function measureConnectionSpeed(pc, elementId, directionType) {
     let previousBytes = 0;
     setInterval(async () => {
         try {
             const stats = await pc.getStats();
             let bytesNow = 0;
             stats.forEach(report => {
-                if (report.type === "outbound-rtp" && !report.isRemote && report.bytesSent) {
-                    bytesNow += report.bytesSent;
-                }
-                if (report.type === "inbound-rtp" && !report.isRemote && report.bytesReceived) {
-                    bytesNow += report.bytesReceived;
+                if (report.type === directionType && !report.isRemote) {
+                    if (directionType === "outbound-rtp" && report.bytesSent) {
+                        bytesNow += report.bytesSent;
+                    }
+                    if (directionType === "inbound-rtp" && report.bytesReceived) {
+                        bytesNow += report.bytesReceived;
+                    }
                 }
             });
             const bytesPerSecond = bytesNow - previousBytes;
