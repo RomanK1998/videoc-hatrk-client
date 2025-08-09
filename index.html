@@ -3,24 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <style>
     body {
-        background: black;
+        background-color: black;
         color: white;
         font-family: Arial, sans-serif;
         text-align: center;
         margin: 0;
+        padding: 0;
     }
     h1 {
         color: red;
-        padding: 10px;
+        margin: 10px 0;
     }
     .video-container {
         position: relative;
         display: inline-block;
         border: 3px solid red;
         background: black;
-        margin: 10px;
+        margin: 5px;
         vertical-align: top;
     }
     video {
@@ -41,22 +43,25 @@
         line-height: 1.2;
     }
 </style>
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
 </head>
 <body>
 <h1>Видеочат РК</h1>
 
-<div class="video-container" id="container-local">
+<div class="video-container" id="localContainer">
     <video id="localVideo" autoplay playsinline muted></video>
     <div class="speed-indicator" id="speed-local">0 КБ/с</div>
 </div>
 
-<div class="video-container" id="container-remote">
+<div class="video-container" id="remoteContainer">
     <video id="remoteVideo" autoplay playsinline></video>
     <div class="speed-indicator" id="speed-remote">0 КБ/с</div>
 </div>
 
 <script>
+const socket = io('https://videoc-hatrk-server.onrender.com');
 let localStream;
+let remoteStream;
 let peerConnection;
 
 const config = {
@@ -67,28 +72,75 @@ async function startLocalStream() {
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('localVideo').srcObject = localStream;
-    } catch (err) {
-        console.error("Ошибка доступа к медиа:", err);
+    } catch (error) {
+        console.error('Ошибка доступа к медиа:', error);
     }
 }
 
-async function startConnection() {
+async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(config);
 
     localStream.getTracks().forEach(track => {
         peerConnection.addTrack(track, localStream);
     });
 
+    remoteStream = new MediaStream();
+    document.getElementById('remoteVideo').srcObject = remoteStream;
+
     peerConnection.ontrack = event => {
-        document.getElementById('remoteVideo').srcObject = event.streams[0];
+        event.streams[0].getTracks().forEach(track => {
+            remoteStream.addTrack(track);
+        });
     };
 
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            socket.emit('ice-candidate', event.candidate);
+        }
+    };
+
+    // Запуск замера скорости для локального и удалённого
     measureConnectionSpeed(peerConnection, "speed-local");
     measureConnectionSpeed(peerConnection, "speed-remote");
-
-    // Здесь твоя логика сигналинга через сервер
 }
 
+// Получение оффера
+socket.on('offer', async offer => {
+    await createPeerConnection();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('answer', answer);
+});
+
+// Получение ответа
+socket.on('answer', async answer => {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+// Получение ICE-кандидата
+socket.on('ice-candidate', async candidate => {
+    try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (error) {
+        console.error('Ошибка добавления ICE-кандидата:', error);
+    }
+});
+
+// Создание оффера
+async function createOffer() {
+    await createPeerConnection();
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('offer', offer);
+}
+
+// Запуск соединения
+startLocalStream().then(() => {
+    setTimeout(createOffer, 2000);
+});
+
+// ======= Функции замера скорости =======
 async function measureConnectionSpeed(pc, elementId) {
     let previousBytes = 0;
     setInterval(async () => {
@@ -124,11 +176,8 @@ function updateSpeedIndicator(elementId, bytesPerSecond) {
     } else {
         speed = bytesPerSecond + ' Б/с';
     }
-
     el.textContent = speed;
 }
-
-startLocalStream().then(startConnection);
 </script>
 </body>
 </html>
