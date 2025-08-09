@@ -7,29 +7,45 @@
     body { text-align: center; font-family: Arial; }
     h1 { color: #2c3e50; }
     video { width: 45%; margin: 5px; background: black; border-radius: 8px; }
+    #status { font-weight: bold; margin: 10px; color: #555; }
+    button { padding: 10px 20px; font-size: 16px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <h1>ВидеочатРК</h1>
+  <div id="status">Ожидание подключения...</div>
+  <button id="connectBtn">Подключиться</button>
+  <br>
   <video id="localVideo" autoplay playsinline muted></video>
   <video id="remoteVideo" autoplay playsinline></video>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; // сюда вставь URL сервера с Render
+    const SERVER_URL = "https://YOUR-RENDER-URL"; // вставь сюда адрес сервера
     const socket = io(SERVER_URL);
     const peerConnection = new RTCPeerConnection();
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
+    const statusEl = document.getElementById("status");
+    const connectBtn = document.getElementById("connectBtn");
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-      });
+    let localStream;
+
+    // Получаем доступ к камере и микрофону
+    async function initMedia() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+      } catch (err) {
+        statusEl.textContent = "Ошибка доступа к камере/микрофону";
+        console.error(err);
+      }
+    }
 
     peerConnection.ontrack = event => {
       remoteVideo.srcObject = event.streams[0];
+      statusEl.textContent = "Подключено ✅";
     };
 
     peerConnection.onicecandidate = event => {
@@ -37,6 +53,7 @@
     };
 
     socket.on("offer", async (offer) => {
+      await initMedia();
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
@@ -56,12 +73,17 @@
     });
 
     async function createOffer() {
+      await initMedia();
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       socket.emit("offer", offer);
+      statusEl.textContent = "Ожидание собеседника...";
     }
 
-    setTimeout(createOffer, 2000);
+    connectBtn.addEventListener("click", () => {
+      createOffer();
+      connectBtn.disabled = true;
+    });
   </script>
 </body>
 </html>
