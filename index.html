@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
-<link rel="icon" type="image/png" href="favicon.png">
+<link rel="icon" type="image/png" href="favicon.png?v=2">
 <style>
     body {
         background-color: black;
@@ -99,7 +99,7 @@ async function createPeerConnection() {
         }
     };
 
-    // Запуск замера скорости для локального и удалённого
+    // Запуск замера скорости
     measureConnectionSpeed(peerConnection, "speed-local");
     measureConnectionSpeed(peerConnection, "speed-remote");
 }
