@@ -4,70 +4,73 @@
   <meta charset="UTF-8">
   <title>ВидеочатРК</title>
   <style>
-    body { text-align: center; font-family: Arial; margin: 0; }
-    h1 { color: #2c3e50; }
+    body {
+      text-align: center;
+      font-family: Arial;
+      margin: 0;
+      background-color: black;
+      color: white;
+    }
+    h1 {
+      color: #2c3e50;
+      margin: 10px;
+    }
     .video-container {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
-    }
-    .video-box {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin: 5px;
-    }
-    .location {
-      font-size: 14px;
-      color: #555;
-      margin-bottom: 4px;
+      gap: 10px;
+      padding: 10px;
     }
     video {
-      width: 45%;
-      max-width: 400px;
+      flex: 1 1 45%;
+      max-width: 45%;
       background: black;
       border-radius: 8px;
+      height: auto;
+    }
+    @media (max-width: 768px) {
+      video {
+        max-width: 100%;
+      }
+    }
+    .light-btn {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      font-size: 18px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      background-color: #444;
+      color: white;
+    }
+    .light-on {
+      background-color: yellow;
+      color: black;
     }
   </style>
 </head>
 <body>
   <h1>ВидеочатРК</h1>
   <div class="video-container">
-    <div class="video-box">
-      <div class="location" id="localLocation"></div>
-      <video id="localVideo" autoplay playsinline muted></video>
-    </div>
-    <div class="video-box">
-      <div class="location" id="remoteLocation"></div>
-      <video id="remoteVideo" autoplay playsinline></video>
-    </div>
+    <video id="localVideo" autoplay playsinline muted></video>
+    <video id="remoteVideo" autoplay playsinline></video>
   </div>
+  <button id="lightBtn" class="light-btn">Свет: ВЫКЛ</button>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
+    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; // URL твоего сервера
     const socket = io(SERVER_URL);
-    const peerConnection = new RTCPeerConnection();
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
-    const localLocationEl = document.getElementById("localLocation");
-    const remoteLocationEl = document.getElementById("remoteLocation");
-
-    // Получаем локацию по IP
-    fetch("https://ipapi.co/city/")
-      .then(res => res.text())
-      .then(city => {
-        localLocationEl.textContent = city;
-        socket.emit("send-location", city);
-      })
-      .catch(() => {
-        localLocationEl.textContent = "Неизвестно";
-        socket.emit("send-location", "Неизвестно");
-      });
-
-    socket.on("user-location", (data) => {
-      remoteLocationEl.textContent = data.location;
-    });
+    const lightBtn = document.getElementById("lightBtn");
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
@@ -109,6 +112,20 @@
     }
 
     setTimeout(createOffer, 2000);
+
+    let lightOn = false;
+    lightBtn.addEventListener("click", () => {
+      lightOn = !lightOn;
+      if (lightOn) {
+        document.body.style.backgroundColor = "white";
+        lightBtn.textContent = "Свет: ВКЛ";
+        lightBtn.classList.add("light-on");
+      } else {
+        document.body.style.backgroundColor = "black";
+        lightBtn.textContent = "Свет: ВЫКЛ";
+        lightBtn.classList.remove("light-on");
+      }
+    });
   </script>
 </body>
 </html>
