@@ -4,12 +4,16 @@
   <meta charset="UTF-8">
   <title>ВидеочатРК</title>
   <style>
-    body { text-align: center; font-family: Arial; margin: 0; }
-    h1 { color: #2c3e50; }
-    .video-container {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
+    body {
+      text-align: center;
+      font-family: Arial;
+      margin: 0;
+      background-color: black;
+      transition: background-color 0.3s ease;
+    }
+    h1 {
+      color: #2c3e50;
+      margin: 10px 0;
     }
     video {
       width: 45%;
@@ -18,10 +22,11 @@
       background: black;
       border-radius: 8px;
     }
-    .controls {
-      margin-top: 10px;
-    }
-    button {
+    #lightBtn {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
       padding: 10px 20px;
       font-size: 16px;
       border: none;
@@ -30,31 +35,30 @@
       color: white;
       cursor: pointer;
     }
-    button:hover {
-      background-color: #e67e22;
-    }
   </style>
 </head>
 <body>
   <h1>ВидеочатРК</h1>
-  <div class="video-container">
-    <video id="localVideo" autoplay playsinline muted></video>
-    <video id="remoteVideo" autoplay playsinline></video>
-  </div>
-  
-  <div class="controls">
-    <button id="lightBtn">Свет: ВЫКЛ</button>
-  </div>
+  <video id="localVideo" autoplay playsinline muted></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <button id="lightBtn">Свет ВЫКЛ</button>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
+    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; 
     const socket = io(SERVER_URL);
-    const peerConnection = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    });
+    const peerConnection = new RTCPeerConnection();
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
+    const lightBtn = document.getElementById("lightBtn");
+
+    let lightOn = false;
+    lightBtn.addEventListener("click", () => {
+      lightOn = !lightOn;
+      document.body.style.backgroundColor = lightOn ? "white" : "black";
+      lightBtn.textContent = lightOn ? "Свет ВКЛ" : "Свет ВЫКЛ";
+    });
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
@@ -96,34 +100,6 @@
     }
 
     setTimeout(createOffer, 2000);
-
-    // Кнопка "Свет"
-    const lightBtn = document.getElementById("lightBtn");
-    let lightOn = false;
-    let lightDiv = null;
-
-    lightBtn.addEventListener("click", () => {
-      if (!lightOn) {
-        lightDiv = document.createElement("div");
-        lightDiv.style.position = "fixed";
-        lightDiv.style.top = 0;
-        lightDiv.style.left = 0;
-        lightDiv.style.width = "100%";
-        lightDiv.style.height = "100%";
-        lightDiv.style.background = "white";
-        lightDiv.style.zIndex = 9999;
-        document.body.appendChild(lightDiv);
-        lightBtn.textContent = "Свет: ВКЛ";
-        lightOn = true;
-      } else {
-        if (lightDiv) {
-          document.body.removeChild(lightDiv);
-          lightDiv = null;
-        }
-        lightBtn.textContent = "Свет: ВЫКЛ";
-        lightOn = false;
-      }
-    });
   </script>
 </body>
 </html>
