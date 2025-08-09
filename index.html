@@ -1,227 +1,130 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>ВидеочатРК</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root {
-      --bg-off: #000;
-      --bg-on: #fff;
-      --accent: #2c3e50;
-    }
-    html,body { height: 100%; margin: 0; }
     body {
-      font-family: Arial, sans-serif;
-      background: var(--bg-off);
-      color: white;
+      text-align: center;
+      font-family: Arial;
+      margin: 0;
+      background-color: #f4f4f4;
       display: flex;
       flex-direction: column;
       min-height: 100vh;
     }
     h1 {
-      text-align: center;
-      margin: 12px 0;
-      color: var(--accent);
+      color: #2c3e50;
+      margin: 10px 0;
     }
     .video-container {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
-      gap: 12px;
-      padding: 12px;
-      flex: 1;
+      flex-grow: 1;
       align-items: center;
     }
     video {
-      flex: 1 1 45%;
-      max-width: 600px;
-      aspect-ratio: 16 / 9;
+      flex: 1 1 300px;
+      max-width: 45%;
+      margin: 5px;
       background: black;
       border-radius: 8px;
-      object-fit: cover;
+      border: 3px solid #2c3e50; /* четкая рамка */
+      box-shadow: 0 0 10px rgba(0,0,0,0.5); /* тень */
     }
-    @media (max-width: 760px) {
-      video { flex: 1 1 100%; max-width: 100%; }
-    }
-    .controls {
-      text-align: center;
-      padding: 14px;
-    }
-    .light-btn {
-      padding: 10px 22px;
-      font-size: 16px;
+    #lightButton {
+      padding: 10px 20px;
+      font-size: 18px;
       border: none;
-      border-radius: 8px;
       cursor: pointer;
-      background: #444;
+      margin: 15px auto;
+      display: block;
+      border-radius: 8px;
+      background-color: black;
       color: white;
-    }
-    .light-on {
-      background: #ffd86b;
-      color: #000;
-    }
-    /* плавный переход фона */
-    body { transition: background-color 0.25s ease; }
-    /* небольшая подсказка статуса */
-    #status {
-      position: fixed;
-      top: 8px;
-      right: 12px;
-      background: rgba(0,0,0,0.35);
-      color: #fff;
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 13px;
-      z-index: 1000;
     }
   </style>
 </head>
 <body>
-  <div id="status">Статус: загрузка...</div>
   <h1>ВидеочатРК</h1>
-
   <div class="video-container">
     <video id="localVideo" autoplay playsinline muted></video>
     <video id="remoteVideo" autoplay playsinline></video>
   </div>
-
-  <div class="controls">
-    <button id="lightButton" class="light-btn">Свет: ВЫКЛ</button>
-  </div>
+  <button id="lightButton">Свет: ВЫКЛ</button>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    // === Параметры сервера ===
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; // <- Заменить на твой URL если нужно
+    const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
     const socket = io(SERVER_URL);
-
-    const statusEl = document.getElementById('status');
-    function setStatus(text) { statusEl.textContent = 'Статус: ' + text; }
-
-    // === ICE конфигурация: несколько STUN + тестовый TURN ===
-    const iceConfig = {
+    const peerConnection = new RTCPeerConnection({
       iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        // Тестовый публичный TURN (НЕ гарантируется для продакшна)
-        {
-          urls: "turn:numb.viagenie.ca:3478",
-          username: "webrtc@live.com",
-          credential: "muazkh"
-        }
+        { urls: "stun:stun.l.google.com:19302" }
       ]
-    };
-
-    // === Создаём PeerConnection с ICE-серверами ===
-    const peerConnection = new RTCPeerConnection(iceConfig);
-
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-
-    // Получаем медиа, добавляем трэки в peerConnection
-    async function startLocalStream() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-        setStatus('Камера запущена');
-      } catch (err) {
-        console.error('getUserMedia error', err);
-        setStatus('Ошибка камеры/микрофона');
-      }
-    }
-
-    startLocalStream();
-
-    // При получении remote track
-    peerConnection.ontrack = (evt) => {
-      remoteVideo.srcObject = evt.streams[0];
-      setStatus('Подключено');
-    };
-
-    // ICE кандидаты -> отправляем через сигналинг
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit('ice-candidate', event.candidate);
-      }
-    };
-
-    // Сигналинг: offer/answer/ice
-    socket.on('offer', async (offer) => {
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('answer', answer);
-      } catch (e) {
-        console.error('handle offer error', e);
-      }
     });
 
-    socket.on('answer', async (answer) => {
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      } catch (e) {
-        console.error('handle answer error', e);
-      }
-    });
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const lightButton = document.getElementById("lightButton");
 
-    socket.on('ice-candidate', async (candidate) => {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (e) {
-        console.warn('addIceCandidate failed', e);
-      }
-    });
-
-    // Простая логика: создаём offer через небольшую задержку,
-    // чтобы локальный поток и соединение успели инициализироваться.
-    async function createOfferIfReady() {
-      try {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('offer', offer);
-        setStatus('Оффер отправлен, ожидание ответа...');
-      } catch (e) {
-        console.error('createOffer error', e);
-      }
-    }
-
-    // Запускаем через 1.5s — это обычно стабильно.
-    setTimeout(createOfferIfReady, 1500);
-
-    // Статус соединения peerConnection (диагностика)
-    peerConnection.onconnectionstatechange = () => {
-      setStatus('Connection: ' + peerConnection.connectionState);
-    };
-
-    // === Кнопка "Свет" ===
-    const lightButton = document.getElementById('lightButton');
     let lightOn = false;
-    lightButton.addEventListener('click', () => {
+
+    lightButton.addEventListener("click", () => {
       lightOn = !lightOn;
       if (lightOn) {
-        document.body.style.backgroundColor = '#ffffff';
-        document.body.style.color = '#000';
-        lightButton.textContent = 'Свет: ВКЛ';
-        lightButton.classList.add('light-on');
+        lightButton.textContent = "Свет: ВКЛ";
+        lightButton.style.backgroundColor = "yellow";
+        lightButton.style.color = "black";
+        document.body.style.backgroundColor = "white";
       } else {
-        document.body.style.backgroundColor = '#000';
-        document.body.style.color = '#fff';
-        lightButton.textContent = 'Свет: ВЫКЛ';
-        lightButton.classList.remove('light-on');
+        lightButton.textContent = "Свет: ВЫКЛ";
+        lightButton.style.backgroundColor = "black";
+        lightButton.style.color = "white";
+        document.body.style.backgroundColor = "#f4f4f4";
       }
     });
 
-    // --- обработка ошибок сокета ---
-    socket.on('connect', () => setStatus('Socket connected'));
-    socket.on('disconnect', () => setStatus('Socket disconnected'));
-    socket.on('connect_error', (err) => {
-      console.error('Socket connect_error', err);
-      setStatus('Ошибка соединения с сервером');
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        localVideo.srcObject = stream;
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+      });
+
+    peerConnection.ontrack = event => {
+      remoteVideo.srcObject = event.streams[0];
+    };
+
+    peerConnection.onicecandidate = event => {
+      if (event.candidate) socket.emit("ice-candidate", event.candidate);
+    };
+
+    socket.on("offer", async (offer) => {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit("answer", answer);
     });
+
+    socket.on("answer", async (answer) => {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    socket.on("ice-candidate", async (candidate) => {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("Ошибка ICE", err);
+      }
+    });
+
+    async function createOffer() {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit("offer", offer);
+    }
+
+    setTimeout(createOffer, 2000);
   </script>
 </body>
 </html>
