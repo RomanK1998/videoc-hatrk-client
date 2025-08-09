@@ -1,130 +1,36 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>ВидеочатРК</title>
-  <style>
-    body {
-      text-align: center;
-      font-family: Arial;
-      margin: 0;
-      padding: 0;
-      background-color: black;
-    }
-    h1 {
-      color: #2c3e50;
-    }
-    video {
-      width: 45%;
-      max-width: 600px;
-      margin: 5px;
-      background: black;
-      border-radius: 8px;
-      border: 2px solid white;
-    }
-    @media (max-width: 800px) {
-      video {
-        width: 90%;
-      }
-    }
-    #lightButton {
-      padding: 10px 20px;
-      border: 2px solid white;
-      border-radius: 8px;
-      background-color: rgba(0,0,0,0.6);
-      color: white;
-      font-size: 16px;
-      cursor: pointer;
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-      z-index: 1000;
-    }
-    #lightButton.on {
-      background-color: yellow;
-      color: black;
-      border-color: black;
-    }
-  </style>
-</head>
-<body>
-  <h1>ВидеочатРК</h1>
-  <video id="localVideo" autoplay playsinline muted></video>
-  <video id="remoteVideo" autoplay playsinline></video>
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const cors = require("cors");
 
-  <button id="lightButton">Свет ВЫКЛ</button>
+const app = express();
+app.use(cors());
+app.get("/", (req, res) => res.send("Сервер WebRTC запущен"));
 
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
-    const socket = io(SERVER_URL);
-    const peerConnection = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
-    });
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
 
-    const localVideo = document.getElementById("localVideo");
-    const remoteVideo = document.getElementById("remoteVideo");
-    const lightButton = document.getElementById("lightButton");
+io.on("connection", (socket) => {
+  console.log("Пользователь подключился:", socket.id);
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-      });
+  socket.on("offer", (offer) => {
+    socket.broadcast.emit("offer", offer);
+  });
 
-    peerConnection.ontrack = event => {
-      remoteVideo.srcObject = event.streams[0];
-    };
+  socket.on("answer", (answer) => {
+    socket.broadcast.emit("answer", answer);
+  });
 
-    peerConnection.onicecandidate = event => {
-      if (event.candidate) socket.emit("ice-candidate", event.candidate);
-    };
+  socket.on("ice-candidate", (candidate) => {
+    socket.broadcast.emit("ice-candidate", candidate);
+  });
 
-    socket.on("offer", async (offer) => {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      socket.emit("answer", answer);
-    });
+  socket.on("disconnect", () => {
+    console.log("Пользователь отключился:", socket.id);
+  });
+});
 
-    socket.on("answer", async (answer) => {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    });
-
-    socket.on("ice-candidate", async (candidate) => {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error("Ошибка ICE", err);
-      }
-    });
-
-    async function createOffer() {
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      socket.emit("offer", offer);
-    }
-
-    setTimeout(createOffer, 2000);
-
-    // Кнопка "Свет"
-    let lightOn = false;
-    lightButton.addEventListener("click", () => {
-      lightOn = !lightOn;
-      if (lightOn) {
-        document.body.style.backgroundColor = "white";
-        lightButton.textContent = "Свет ВКЛ";
-        lightButton.classList.add("on");
-      } else {
-        document.body.style.backgroundColor = "black";
-        lightButton.textContent = "Свет ВЫКЛ";
-        lightButton.classList.remove("on");
-      }
-    });
-  </script>
-</body>
-</html>
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
