@@ -1,169 +1,128 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>ВидеочатРК</title>
-  
-  <style>
-    /* Базовая сброска */
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      overflow: hidden; /* отключаем скролл */
-    }
-
+<meta charset="UTF-8">
+<title>ВидеочатРК</title>
+<style>
     body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #000;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      align-items: center;
-      justify-content: flex-start;
+        background: black;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin: 0;
     }
-
-    /* Заголовок — красный, без фона и рамки */
     h1 {
-      color: #e53935;
-      background: transparent;
-      border: none;
-      margin: 14px 0 8px 0;
-      padding: 0;
-      font-size: 1.6rem;
-      line-height: 1;
-      text-align: center;
-      user-select: none;
+        color: red;
+        padding: 10px;
     }
-
     .video-container {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      padding: 10px;
-      gap: 12px;
-      width: 100%;
-      max-width: 1400px;
-      box-sizing: border-box;
+        position: relative;
+        display: inline-block;
+        border: 3px solid red;
+        background: black;
+        margin: 10px;
+        vertical-align: top;
     }
-
     video {
-      flex: 1 1 45%;
-      max-width: 45%;
-      margin: 0;
-      background: black;
-      border-radius: 8px;
-      border: 0;
-      object-fit: cover;
-      height: auto;
-      max-height: calc(100vh - 160px);
+        display: block;
+        max-width: 45vw;
+        max-height: 45vh;
     }
-
-    .controls {
-      text-align: center;
-      margin: 15px 0;
+    .speed-indicator {
+        position: absolute;
+        top: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.85);
+        border-left: 3px solid red;
+        border-bottom: 3px solid red;
+        color: red;
+        font-size: 12px;
+        padding: 2px 6px;
+        line-height: 1.2;
     }
-
-    #lightBtn {
-      padding: 10px 20px;
-      font-size: 16px;
-      border: 2px solid white;
-      border-radius: 6px;
-      background: #333;
-      color: white;
-      cursor: pointer;
-    }
-
-    #lightBtn.on {
-      background: yellow;
-      color: black;
-      border-color: yellow;
-    }
-  </style>
+</style>
 </head>
 <body>
-  <h1>ВидеочатРК</h1>
-  <div class="video-container">
+<h1>Видеочат РК</h1>
+
+<div class="video-container" id="container-local">
     <video id="localVideo" autoplay playsinline muted></video>
+    <div class="speed-indicator" id="speed-local">0 КБ/с</div>
+</div>
+
+<div class="video-container" id="container-remote">
     <video id="remoteVideo" autoplay playsinline></video>
-  </div>
-  <div class="controls">
-    <button id="lightBtn">Свет ВЫКЛ</button>
-  </div>
+    <div class="speed-indicator" id="speed-remote">0 КБ/с</div>
+</div>
 
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
-    const socket = io(SERVER_URL);
-    const peerConnection = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+<script>
+let localStream;
+let peerConnection;
+
+const config = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+
+async function startLocalStream() {
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById('localVideo').srcObject = localStream;
+    } catch (err) {
+        console.error("Ошибка доступа к медиа:", err);
+    }
+}
+
+async function startConnection() {
+    peerConnection = new RTCPeerConnection(config);
+
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
     });
-
-    const localVideo = document.getElementById("localVideo");
-    const remoteVideo = document.getElementById("remoteVideo");
-    const lightBtn = document.getElementById("lightBtn");
-
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-      })
-      .catch(err => console.error("Ошибка доступа к камере/микрофону", err));
 
     peerConnection.ontrack = event => {
-      remoteVideo.srcObject = event.streams[0];
+        document.getElementById('remoteVideo').srcObject = event.streams[0];
     };
 
-    peerConnection.onicecandidate = event => {
-      if (event.candidate) socket.emit("ice-candidate", event.candidate);
-    };
+    measureConnectionSpeed(peerConnection, "speed-local");
+    measureConnectionSpeed(peerConnection, "speed-remote");
 
-    socket.on("offer", async (offer) => {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      socket.emit("answer", answer);
-    });
+    // Здесь твоя логика сигналинга через сервер
+}
 
-    socket.on("answer", async (answer) => {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    });
+async function measureConnectionSpeed(pc, elementId) {
+    let previousBytes = 0;
+    setInterval(async () => {
+        try {
+            const stats = await pc.getStats();
+            let bytesNow = 0;
+            stats.forEach(report => {
+                if (report.type === "outbound-rtp" && !report.isRemote && report.bytesSent) {
+                    bytesNow += report.bytesSent;
+                }
+                if (report.type === "inbound-rtp" && !report.isRemote && report.bytesReceived) {
+                    bytesNow += report.bytesReceived;
+                }
+            });
+            const bytesPerSecond = bytesNow - previousBytes;
+            previousBytes = bytesNow;
+            updateSpeedIndicator(elementId, bytesPerSecond);
+        } catch (e) {
+            console.error("Ошибка измерения скорости:", e);
+        }
+    }, 1000);
+}
 
-    socket.on("ice-candidate", async (candidate) => {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error("Ошибка ICE", err);
-      }
-    });
+function updateSpeedIndicator(elementId, bytesPerSecond) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
 
-    async function createOffer() {
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      socket.emit("offer", offer);
+    let speed;
+    if (bytesPerSecond >= 1000000) {
+        speed = (bytesPerSecond / 1000000).toFixed(1) + ' МБ/с';
+    } else if (bytesPerSecond >= 1000) {
+        speed = (bytesPerSecond / 1000).toFixed(0) + ' КБ/с';
+    } else {
+        speed = bytesPerSecond + ' Б/с';
     }
 
-    setTimeout(createOffer, 2000);
-
-    let lightOn = false;
-    lightBtn.addEventListener("click", () => {
-      lightOn = !lightOn;
-      if (lightOn) {
-        document.body.style.backgroundColor = "white";
-        document.body.style.color = "black";
-        lightBtn.textContent = "Свет ВКЛ";
-        lightBtn.classList.add("on");
-      } else {
-        document.body.style.backgroundColor = "black";
-        document.body.style.color = "white";
-        lightBtn.textContent = "Свет ВЫКЛ";
-        lightBtn.classList.remove("on");
-      }
-    });
-  </script>
-</body>
-</html>
+    el.textConte
