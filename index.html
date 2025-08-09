@@ -16,40 +16,32 @@
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
+    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; // URL сервера
     const socket = io(SERVER_URL);
-    let peerConnection;
-    let localStream;
+
+    // Добавляем STUN сервер Google
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
+    });
 
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
 
-    async function init() {
-      // Получаем камеру и микрофон
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localVideo.srcObject = localStream;
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        localVideo.srcObject = stream;
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+      });
 
-      // Создаём соединение
-      peerConnection = new RTCPeerConnection();
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    peerConnection.ontrack = event => {
+      remoteVideo.srcObject = event.streams[0];
+    };
 
-      peerConnection.ontrack = event => {
-        remoteVideo.srcObject = event.streams[0];
-      };
-
-      peerConnection.onicecandidate = event => {
-        if (event.candidate) socket.emit("ice-candidate", event.candidate);
-      };
-
-      // Если это первый подключившийся — он создаёт оффер
-      socket.emit("join");
-    }
-
-    socket.on("create-offer", async () => {
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      socket.emit("offer", offer);
-    });
+    peerConnection.onicecandidate = event => {
+      if (event.candidate) socket.emit("ice-candidate", event.candidate);
+    };
 
     socket.on("offer", async (offer) => {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -70,7 +62,13 @@
       }
     });
 
-    init();
+    async function createOffer() {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit("offer", offer);
+    }
+
+    setTimeout(createOffer, 2000);
   </script>
 </body>
 </html>
