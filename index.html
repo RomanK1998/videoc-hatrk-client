@@ -8,7 +8,8 @@
     h1 { color: #2c3e50; }
     video { width: 45%; margin: 5px; background: black; border-radius: 8px; }
     #status { font-weight: bold; margin: 10px; color: #555; }
-    button { padding: 10px 20px; font-size: 16px; margin-top: 10px; }
+    button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -21,43 +22,60 @@
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const SERVER_URL = "https://YOUR-RENDER-URL"; // вставь сюда адрес сервера
+    const SERVER_URL = "https://YOUR-RENDER-URL"; // сюда вставь адрес сервера
     const socket = io(SERVER_URL);
-    const peerConnection = new RTCPeerConnection();
+    let peerConnection;
+    let localStream;
+    let connected = false;
+
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
     const statusEl = document.getElementById("status");
     const connectBtn = document.getElementById("connectBtn");
 
-    let localStream;
-
-    // Получаем доступ к камере и микрофону
     async function initMedia() {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
       } catch (err) {
         statusEl.textContent = "Ошибка доступа к камере/микрофону";
         console.error(err);
       }
     }
 
-    peerConnection.ontrack = event => {
-      remoteVideo.srcObject = event.streams[0];
-      statusEl.textContent = "Подключено ✅";
-    };
+    function createPeerConnection() {
+      peerConnection = new RTCPeerConnection();
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    peerConnection.onicecandidate = event => {
-      if (event.candidate) socket.emit("ice-candidate", event.candidate);
-    };
+      peerConnection.ontrack = event => {
+        remoteVideo.srcObject = event.streams[0];
+        if (!connected) {
+          connected = true;
+          statusEl.textContent = "Подключено ✅";
+          connectBtn.textContent = "Отключиться";
+          connectBtn.disabled = false;
+        }
+      };
+
+      peerConnection.onicecandidate = event => {
+        if (event.candidate) socket.emit("ice-candidate", event.candidate);
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
+          handlePeerDisconnect();
+        }
+      };
+    }
 
     socket.on("offer", async (offer) => {
       await initMedia();
+      createPeerConnection();
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       socket.emit("answer", answer);
+      statusEl.textContent = "Подключение...";
     });
 
     socket.on("answer", async (answer) => {
@@ -72,17 +90,45 @@
       }
     });
 
-    async function createOffer() {
+    function handlePeerDisconnect() {
+      endCall();
+      statusEl.textContent = "Собеседник вышел ❌";
+      connectBtn.textContent = "Подключиться";
+    }
+
+    async function startCall() {
       await initMedia();
+      createPeerConnection();
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       socket.emit("offer", offer);
       statusEl.textContent = "Ожидание собеседника...";
+      connectBtn.disabled = true;
+    }
+
+    function endCall() {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      remoteVideo.srcObject = null;
+      localVideo.srcObject = null;
+      connected = false;
+      connectBtn.textContent = "Подключиться";
+      connectBtn.disabled = false;
     }
 
     connectBtn.addEventListener("click", () => {
-      createOffer();
-      connectBtn.disabled = true;
+      if (!connected && connectBtn.textContent === "Подключиться") {
+        startCall();
+      } else {
+        socket.emit("manual-disconnect"); // можно добавить серверное событие
+        endCall();
+        statusEl.textContent = "Отключено";
+      }
     });
   </script>
 </body>
