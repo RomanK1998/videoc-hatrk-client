@@ -8,14 +8,11 @@
     h1 { color: #2c3e50; }
     video { width: 45%; margin: 5px; background: black; border-radius: 8px; }
     #status { font-weight: bold; margin: 10px; color: #555; }
-    button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <h1>ВидеочатРК</h1>
   <div id="status">Ожидание подключения...</div>
-  <button id="connectBtn">Подключиться</button>
   <br>
   <video id="localVideo" autoplay playsinline muted></video>
   <video id="remoteVideo" autoplay playsinline></video>
@@ -26,12 +23,10 @@
     const socket = io(SERVER_URL);
     let peerConnection;
     let localStream;
-    let connected = false;
 
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
     const statusEl = document.getElementById("status");
-    const connectBtn = document.getElementById("connectBtn");
 
     async function initMedia() {
       try {
@@ -49,22 +44,11 @@
 
       peerConnection.ontrack = event => {
         remoteVideo.srcObject = event.streams[0];
-        if (!connected) {
-          connected = true;
-          statusEl.textContent = "Подключено ✅";
-          connectBtn.textContent = "Отключиться";
-          connectBtn.disabled = false;
-        }
+        statusEl.textContent = "Подключено ✅";
       };
 
       peerConnection.onicecandidate = event => {
         if (event.candidate) socket.emit("ice-candidate", event.candidate);
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
-          handlePeerDisconnect();
-        }
       };
     }
 
@@ -90,12 +74,6 @@
       }
     });
 
-    function handlePeerDisconnect() {
-      endCall();
-      statusEl.textContent = "Собеседник вышел ❌";
-      connectBtn.textContent = "Подключиться";
-    }
-
     async function startCall() {
       await initMedia();
       createPeerConnection();
@@ -103,33 +81,9 @@
       await peerConnection.setLocalDescription(offer);
       socket.emit("offer", offer);
       statusEl.textContent = "Ожидание собеседника...";
-      connectBtn.disabled = true;
     }
 
-    function endCall() {
-      if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-      }
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
-      remoteVideo.srcObject = null;
-      localVideo.srcObject = null;
-      connected = false;
-      connectBtn.textContent = "Подключиться";
-      connectBtn.disabled = false;
-    }
-
-    connectBtn.addEventListener("click", () => {
-      if (!connected && connectBtn.textContent === "Подключиться") {
-        startCall();
-      } else {
-        socket.emit("manual-disconnect"); // можно добавить серверное событие
-        endCall();
-        statusEl.textContent = "Отключено";
-      }
-    });
+    startCall();
   </script>
 </body>
 </html>
