@@ -125,4 +125,10 @@ function updateSpeedIndicator(elementId, bytesPerSecond) {
         speed = bytesPerSecond + ' Б/с';
     }
 
-    el.textConte
+    el.textContent = speed;
+}
+
+startLocalStream().then(startConnection);
+</script>
+</body>
+</html>
