@@ -6,64 +6,55 @@
   <style>
     body {
       text-align: center;
-      font-family: Arial, sans-serif;
+      font-family: Arial;
       margin: 0;
-      background-color: black; /* ночь по умолчанию */
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      transition: background-color 0.3s;
+      padding: 0;
+      background-color: black;
     }
     h1 {
-      color: #fff;
-      margin: 10px 0;
-      transition: color 0.3s;
-    }
-    .video-container {
-      display: flex;
-      flex: 1;
-      flex-wrap: wrap;
-      justify-content: center;
-      align-items: center;
-      padding: 10px;
-      gap: 10px;
+      color: #2c3e50;
     }
     video {
-      flex: 1 1 45%;
-      max-width: 45%;
-      aspect-ratio: 4/3;
+      width: 45%;
+      max-width: 600px;
+      margin: 5px;
       background: black;
       border-radius: 8px;
-      border: 3px solid #2c3e50;
-      box-shadow: 0 0 10px rgba(0,0,0,0.7);
-      object-fit: cover;
+      border: 2px solid white;
     }
-    @media (max-width: 768px) {
+    @media (max-width: 800px) {
       video {
-        max-width: 90%;
+        width: 90%;
       }
     }
     #lightButton {
       padding: 10px 20px;
-      font-size: 18px;
-      border: none;
-      cursor: pointer;
-      margin: 15px auto;
-      display: block;
+      border: 2px solid white;
       border-radius: 8px;
-      background-color: black;
+      background-color: rgba(0,0,0,0.6);
       color: white;
-      transition: all 0.3s;
+      font-size: 16px;
+      cursor: pointer;
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+      z-index: 1000;
+    }
+    #lightButton.on {
+      background-color: yellow;
+      color: black;
+      border-color: black;
     }
   </style>
 </head>
 <body>
   <h1>ВидеочатРК</h1>
-  <div class="video-container">
-    <video id="localVideo" autoplay playsinline muted></video>
-    <video id="remoteVideo" autoplay playsinline></video>
-  </div>
-  <button id="lightButton">Свет: ВЫКЛ</button>
+  <video id="localVideo" autoplay playsinline muted></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <button id="lightButton">Свет ВЫКЛ</button>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
@@ -71,33 +62,13 @@
     const socket = io(SERVER_URL);
     const peerConnection = new RTCPeerConnection({
       iceServers: [
-        { urls: "stun:stun.l.google.com:19302" }
+        { urls: 'stun:stun.l.google.com:19302' }
       ]
     });
 
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
     const lightButton = document.getElementById("lightButton");
-    const title = document.querySelector("h1");
-
-    let lightOn = false;
-
-    lightButton.addEventListener("click", () => {
-      lightOn = !lightOn;
-      if (lightOn) {
-        lightButton.textContent = "Свет: ВКЛ";
-        lightButton.style.backgroundColor = "yellow";
-        lightButton.style.color = "black";
-        document.body.style.backgroundColor = "white";
-        title.style.color = "#000";
-      } else {
-        lightButton.textContent = "Свет: ВЫКЛ";
-        lightButton.style.backgroundColor = "black";
-        lightButton.style.color = "white";
-        document.body.style.backgroundColor = "black";
-        title.style.color = "#fff";
-      }
-    });
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
@@ -139,6 +110,21 @@
     }
 
     setTimeout(createOffer, 2000);
+
+    // Кнопка "Свет"
+    let lightOn = false;
+    lightButton.addEventListener("click", () => {
+      lightOn = !lightOn;
+      if (lightOn) {
+        document.body.style.backgroundColor = "white";
+        lightButton.textContent = "Свет ВКЛ";
+        lightButton.classList.add("on");
+      } else {
+        document.body.style.backgroundColor = "black";
+        lightButton.textContent = "Свет ВЫКЛ";
+        lightButton.classList.remove("on");
+      }
+    });
   </script>
 </body>
 </html>
