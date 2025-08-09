@@ -4,61 +4,61 @@
   <meta charset="UTF-8">
   <title>ВидеочатРК</title>
   <style>
-    body {
-      text-align: center;
-      font-family: Arial;
-      margin: 0;
+    body { 
+      text-align: center; 
+      font-family: Arial; 
       background-color: black;
-      transition: background-color 0.3s ease;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
     }
-    h1 {
-      color: #2c3e50;
-      margin: 10px 0;
+    h1 { color: #2c3e50; }
+    .video-container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
     }
-    video {
-      width: 45%;
-      max-width: 400px;
-      margin: 5px;
-      background: black;
-      border-radius: 8px;
+    video { 
+      width: 45%; 
+      margin: 5px; 
+      background: black; 
+      border-radius: 8px; 
     }
-    #lightBtn {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
+    .controls {
+      padding: 15px;
+    }
+    button {
       padding: 10px 20px;
       font-size: 16px;
       border: none;
-      border-radius: 8px;
-      background-color: #f39c12;
-      color: white;
+      border-radius: 6px;
       cursor: pointer;
     }
   </style>
 </head>
 <body>
   <h1>ВидеочатРК</h1>
-  <video id="localVideo" autoplay playsinline muted></video>
-  <video id="remoteVideo" autoplay playsinline></video>
-
-  <button id="lightBtn">Свет ВЫКЛ</button>
+  <div class="video-container">
+    <video id="localVideo" autoplay playsinline muted></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+  </div>
+  <div class="controls">
+    <button id="lightToggle">Свет: ВЫКЛ</button>
+  </div>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; 
+    const SERVER_URL = "https://videoc-hatrk-server.onrender.com"; // URL сервера
     const socket = io(SERVER_URL);
-    const peerConnection = new RTCPeerConnection();
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
-    const lightBtn = document.getElementById("lightBtn");
-
-    let lightOn = false;
-    lightBtn.addEventListener("click", () => {
-      lightOn = !lightOn;
-      document.body.style.backgroundColor = lightOn ? "white" : "black";
-      lightBtn.textContent = lightOn ? "Свет ВКЛ" : "Свет ВЫКЛ";
-    });
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
@@ -100,6 +100,16 @@
     }
 
     setTimeout(createOffer, 2000);
+
+    // --- Логика кнопки света ---
+    const lightBtn = document.getElementById("lightToggle");
+    let lightOn = false;
+
+    lightBtn.addEventListener("click", () => {
+      lightOn = !lightOn;
+      document.body.style.backgroundColor = lightOn ? "white" : "black";
+      lightBtn.textContent = lightOn ? "Свет: ВКЛ" : "Свет: ВЫКЛ";
+    });
   </script>
 </body>
 </html>
