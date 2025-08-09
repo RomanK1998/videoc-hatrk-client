@@ -24,11 +24,14 @@
         background: black;
         margin: 5px;
         vertical-align: top;
+        width: 45vw;       /* фиксированная ширина */
+        height: 40vh;      /* фиксированная высота */
+        overflow: hidden;  /* обрезать лишнее видео */
     }
     video {
-        display: block;
-        max-width: 45vw;
-        max-height: 45vh;
+        width: 100%;       /* видео занимает весь контейнер */
+        height: 100%;
+        object-fit: cover; /* масштабирует и обрезает видео */
     }
     .speed-indicator {
         position: absolute;
