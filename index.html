@@ -69,6 +69,18 @@
       background: white;
       z-index: 9999;
       display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+
+    #lightVideo {
+      width: 200px;
+      height: 150px;
+      border-radius: 8px;
+      background: black;
+      object-fit: cover;
+      border: 3px solid #333;
     }
   </style>
 </head>
@@ -82,7 +94,10 @@
     <video id="remoteVideo" autoplay playsinline></video>
   </div>
 
-  <div id="lightScreen"></div>
+  <!-- Экран "Свет" -->
+  <div id="lightScreen">
+    <video id="lightVideo" autoplay playsinline muted></video>
+  </div>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
@@ -94,10 +109,12 @@
 
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
+    const lightVideo = document.getElementById("lightVideo");
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
         localVideo.srcObject = stream;
+        lightVideo.srcObject = stream;
         stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
       });
 
@@ -143,11 +160,10 @@
 
     lightBtn.addEventListener("click", async () => {
       if (!lightOn) {
-        lightScreen.style.display = "block";
+        lightScreen.style.display = "flex";
         lightBtn.textContent = "ВЫКЛ свет";
         lightOn = true;
 
-        // Полноэкранный режим
         if (lightScreen.requestFullscreen) {
           await lightScreen.requestFullscreen();
         }
