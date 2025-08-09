@@ -3,44 +3,71 @@
 <head>
   <meta charset="UTF-8">
   <title>ВидеочатРК</title>
+  
   <style>
+    /* Базовая сброска */
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow: hidden; /* отключаем скролл */
+    }
+
     body {
-      text-align: center;
-      font-family: Arial;
-      margin: 0;
-      background-color: black;
-      color: white;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #000;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: flex-start;
     }
+
+    /* Заголовок — красный, без фона и рамки */
     h1 {
-      background: white;
-      color: black;
-      padding: 10px;
-      margin: 0;
+      color: #e53935;
+      background: transparent;
+      border: none;
+      margin: 14px 0 8px 0;
+      padding: 0;
+      font-size: 1.6rem;
+      line-height: 1;
+      text-align: center;
+      user-select: none;
     }
+
     .video-container {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
       padding: 10px;
+      gap: 12px;
+      width: 100%;
+      max-width: 1400px;
+      box-sizing: border-box;
     }
+
     video {
       flex: 1 1 45%;
       max-width: 45%;
-      margin: 5px;
+      margin: 0;
       background: black;
       border-radius: 8px;
-      border: 3px solid white;
+      border: 0;
+      object-fit: cover;
+      height: auto;
+      max-height: calc(100vh - 160px);
     }
-    @media (max-width: 768px) {
-      video {
-        flex: 1 1 90%;
-        max-width: 90%;
-      }
-    }
+
     .controls {
       text-align: center;
       margin: 15px 0;
     }
+
     #lightBtn {
       padding: 10px 20px;
       font-size: 16px;
@@ -50,6 +77,7 @@
       color: white;
       cursor: pointer;
     }
+
     #lightBtn.on {
       background: yellow;
       color: black;
@@ -121,7 +149,6 @@
 
     setTimeout(createOffer, 2000);
 
-    // Кнопка Свет
     let lightOn = false;
     lightBtn.addEventListener("click", () => {
       lightOn = !lightOn;
