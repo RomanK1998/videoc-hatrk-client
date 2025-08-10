@@ -28,14 +28,12 @@
         height: 40vh;
         overflow: hidden;
     }
-    /* Для экранов шире 1024px (ноутбуки и десктопы) */
     @media (min-width: 1024px) {
         .video-container {
             width: 30vw;
-            height: 50vh;
+            height: 50vh; /* Увеличено в 2 раза */
         }
     }
-    /* Для маленьких экранов (телефоны) */
     @media (max-width: 768px) {
         .video-container {
             width: 90vw;
@@ -78,7 +76,11 @@
 </div>
 
 <script>
-const socket = io('https://videoc-hatrk-server.onrender.com');
+const socket = io('https://videoc-hatrk-server.onrender.com', {
+    reconnection: true,           // Автовосстановление
+    reconnectionAttempts: 10,     // Кол-во попыток
+    reconnectionDelay: 2000       // Задержка между попытками
+});
 let localStream;
 let remoteStream;
 let peerConnection;
@@ -118,12 +120,18 @@ async function createPeerConnection() {
         }
     };
 
-    // Запуск замера скорости отдельно для локального и удалённого потока
+    // Если соединение WebRTC разорвано — пересоздать
+    peerConnection.oniceconnectionstatechange = () => {
+        if (["disconnected", "failed"].includes(peerConnection.iceConnectionState)) {
+            console.warn("WebRTC соединение потеряно, пересоздаём...");
+            restartConnection();
+        }
+    };
+
     measureConnectionSpeed(peerConnection, "speed-local", "outbound-rtp");
     measureConnectionSpeed(peerConnection, "speed-remote", "inbound-rtp");
 }
 
-// Получение оффера
 socket.on('offer', async offer => {
     await createPeerConnection();
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -132,12 +140,10 @@ socket.on('offer', async offer => {
     socket.emit('answer', answer);
 });
 
-// Получение ответа
 socket.on('answer', async answer => {
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 });
 
-// Получение ICE-кандидата
 socket.on('ice-candidate', async candidate => {
     try {
         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -146,7 +152,6 @@ socket.on('ice-candidate', async candidate => {
     }
 });
 
-// Создание оффера
 async function createOffer() {
     await createPeerConnection();
     const offer = await peerConnection.createOffer();
@@ -154,7 +159,27 @@ async function createOffer() {
     socket.emit('offer', offer);
 }
 
-// Запуск соединения
+// ==== Новый код переподключения ====
+socket.on('disconnect', () => {
+    console.warn("Отключено от сервера, ожидаем переподключение...");
+});
+
+socket.on('connect', () => {
+    console.log("Подключено к серверу");
+    if (!peerConnection || peerConnection.iceConnectionState === "failed") {
+        restartConnection();
+    }
+});
+
+async function restartConnection() {
+    console.log("Перезапуск соединения...");
+    if (peerConnection) {
+        peerConnection.close();
+    }
+    await createOffer();
+}
+
+// ==== Запуск ====
 startLocalStream().then(() => {
     setTimeout(createOffer, 2000);
 });
