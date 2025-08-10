@@ -1,229 +1,96 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>ВидеочатРК</title>
-<link rel="icon" type="image/png" href="favicon.png?v=3">
-<style>
-    body {
-        background-color: black;
-        color: white;
-        font-family: Arial, sans-serif;
-        text-align: center;
-        margin: 0;
-        padding: 0;
-    }
-    h1 {
-        color: red;
-        margin: 10px 0;
-    }
-    .video-container {
-        position: relative;
-        display: inline-block;
-        border: 3px solid red;
-        background: black;
-        margin: 5px;
-        vertical-align: top;
-        width: 45vw;
-        height: 40vh;
-        overflow: hidden;
-    }
-    @media (min-width: 1024px) {
-        .video-container {
-            width: 30vw;
-            height: 50vh; /* Увеличено в 2 раза */
+    <meta charset="UTF-8">
+    <title>ВидеочатРК</title>
+    <style>
+        body { font-family: sans-serif; background: #111; color: #fff; display: flex; flex-direction: column; align-items: center; }
+        video { border: 2px solid #555; margin: 10px; width: 300px; height: 200px; background: black; }
+        @media (min-width: 1024px) {
+            video { height: 400px; }
         }
-    }
-    @media (max-width: 768px) {
-        .video-container {
-            width: 90vw;
-            height: 50vh;
-            display: block;
-            margin: 10px auto;
-        }
-    }
-    video {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .speed-indicator {
-        position: absolute;
-        top: 0;
-        right: 0;
-        background: rgba(0, 0, 0, 0.85);
-        border-left: 3px solid red;
-        border-bottom: 3px solid red;
-        color: red;
-        font-size: 12px;
-        padding: 2px 6px;
-        line-height: 1.2;
-    }
-</style>
-<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    </style>
 </head>
 <body>
-<h1>Видеочат РК</h1>
-
-<div class="video-container" id="localContainer">
+    <h1>ВидеочатРК</h1>
     <video id="localVideo" autoplay playsinline muted></video>
-    <div class="speed-indicator" id="speed-local">0 КБ/с</div>
-</div>
-
-<div class="video-container" id="remoteContainer">
     <video id="remoteVideo" autoplay playsinline></video>
-    <div class="speed-indicator" id="speed-remote">0 КБ/с</div>
-</div>
 
-<script>
-const socket = io('https://videoc-hatrk-server.onrender.com', {
-    reconnection: true,           // Автовосстановление
-    reconnectionAttempts: 10,     // Кол-во попыток
-    reconnectionDelay: 2000       // Задержка между попытками
-});
-let localStream;
-let remoteStream;
-let peerConnection;
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+        const socket = io("https://videoc-hatrk-server.onrender.com");
+        let peerConnection;
+        let localStream;
 
-const config = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-};
-
-async function startLocalStream() {
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        document.getElementById('localVideo').srcObject = localStream;
-    } catch (error) {
-        console.error('Ошибка доступа к медиа:', error);
-    }
-}
-
-async function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(config);
-
-    localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-    });
-
-    remoteStream = new MediaStream();
-    document.getElementById('remoteVideo').srcObject = remoteStream;
-
-    peerConnection.ontrack = event => {
-        event.streams[0].getTracks().forEach(track => {
-            remoteStream.addTrack(track);
+        socket.on("connect", async () => {
+            console.log("Подключено к серверу");
+            await restartConnection();
         });
-    };
 
-    peerConnection.onicecandidate = event => {
-        if (event.candidate) {
-            socket.emit('ice-candidate', event.candidate);
+        socket.on("offer", async (offer) => {
+            if (!peerConnection) await createPeerConnection();
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit("answer", answer);
+        });
+
+        socket.on("answer", async (answer) => {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        });
+
+        socket.on("ice-candidate", async (candidate) => {
+            try {
+                await peerConnection.addIceCandidate(candidate);
+            } catch (e) {
+                console.error("Ошибка добавления ICE:", e);
+            }
+        });
+
+        async function restartConnection() {
+            console.log("Перезапуск соединения...");
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            await startLocalStream();
+            await createOffer();
         }
-    };
 
-    // Если соединение WebRTC разорвано — пересоздать
-    peerConnection.oniceconnectionstatechange = () => {
-        if (["disconnected", "failed"].includes(peerConnection.iceConnectionState)) {
-            console.warn("WebRTC соединение потеряно, пересоздаём...");
-            restartConnection();
+        async function startLocalStream() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById("localVideo").srcObject = localStream;
+            } catch (err) {
+                console.error("Ошибка доступа к камере/микрофону:", err);
+            }
         }
-    };
 
-    measureConnectionSpeed(peerConnection, "speed-local", "outbound-rtp");
-    measureConnectionSpeed(peerConnection, "speed-remote", "inbound-rtp");
-}
-
-socket.on('offer', async offer => {
-    await createPeerConnection();
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', answer);
-});
-
-socket.on('answer', async answer => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-});
-
-socket.on('ice-candidate', async candidate => {
-    try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (error) {
-        console.error('Ошибка добавления ICE-кандидата:', error);
-    }
-});
-
-async function createOffer() {
-    await createPeerConnection();
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer);
-}
-
-// ==== Новый код переподключения ====
-socket.on('disconnect', () => {
-    console.warn("Отключено от сервера, ожидаем переподключение...");
-});
-
-socket.on('connect', () => {
-    console.log("Подключено к серверу");
-    if (!peerConnection || peerConnection.iceConnectionState === "failed") {
-        restartConnection();
-    }
-});
-
-async function restartConnection() {
-    console.log("Перезапуск соединения...");
-    if (peerConnection) {
-        peerConnection.close();
-    }
-    await createOffer();
-}
-
-// ==== Запуск ====
-startLocalStream().then(() => {
-    setTimeout(createOffer, 2000);
-});
-
-// ======= Функции замера скорости =======
-function measureConnectionSpeed(pc, elementId, directionType) {
-    let previousBytes = 0;
-    setInterval(async () => {
-        try {
-            const stats = await pc.getStats();
-            let bytesNow = 0;
-            stats.forEach(report => {
-                if (report.type === directionType && !report.isRemote) {
-                    if (directionType === "outbound-rtp" && report.bytesSent) {
-                        bytesNow += report.bytesSent;
-                    }
-                    if (directionType === "inbound-rtp" && report.bytesReceived) {
-                        bytesNow += report.bytesReceived;
-                    }
+        async function createPeerConnection() {
+            peerConnection = new RTCPeerConnection();
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit("ice-candidate", event.candidate);
                 }
-            });
-            const bytesPerSecond = bytesNow - previousBytes;
-            previousBytes = bytesNow;
-            updateSpeedIndicator(elementId, bytesPerSecond);
-        } catch (e) {
-            console.error("Ошибка измерения скорости:", e);
+            };
+            peerConnection.ontrack = (event) => {
+                document.getElementById("remoteVideo").srcObject = event.streams[0];
+            };
+            if (localStream) {
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+            }
         }
-    }, 1000);
-}
 
-function updateSpeedIndicator(elementId, bytesPerSecond) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-
-    let speed;
-    if (bytesPerSecond >= 1000000) {
-        speed = (bytesPerSecond / 1000000).toFixed(1) + ' МБ/с';
-    } else if (bytesPerSecond >= 1000) {
-        speed = (bytesPerSecond / 1000).toFixed(0) + ' КБ/с';
-    } else {
-        speed = bytesPerSecond + ' Б/с';
-    }
-    el.textContent = speed;
-}
-</script>
+        async function createOffer() {
+            await createPeerConnection();
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit("offer", offer);
+        }
+    </script>
 </body>
 </html>
