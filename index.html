@@ -31,8 +31,8 @@
     /* Для экранов шире 1024px (ноутбуки и десктопы) */
     @media (min-width: 1024px) {
         .video-container {
-            width: 30vw;
-            height: 25vh;
+            width: 35vw;
+            height: 75vh;
         }
     }
     /* Для маленьких экранов (телефоны) */
@@ -113,9 +113,9 @@ async function createPeerConnection() {
 
     // Назначаем удалённый поток напрямую из события ontrack (чтобы не дублировать треки)
     peerConnection.ontrack = event => {
-        const remoteVid = document.getElementById('remoteVideo');
+        let remoteVid = document.getElementById('remoteVideo');
         if (remoteVid) {
-            remoteVid.srcObject = null; // Очистка старого потока перед назначением нового
+            remoteVid.srcObject = null; // Очистка старого потока
         }
         // Берём первый доступный stream отдалённого участника и назначаем в элемент
         const remoteVid = document.getElementById('remoteVideo');
@@ -230,14 +230,6 @@ socket.on('connect', async () => {
 });
 
 async function restartConnection() {
-    const remoteVid = document.getElementById('remoteVideo');
-    if (remoteVid) {
-        remoteVid.srcObject = null; // Сброс удалённого видео
-    }
-    if (peerConnection) {
-        try { peerConnection.ontrack = null; peerConnection.close(); } catch(e) {}
-        peerConnection = null;
-    }
     console.log("Перезапуск соединения...");
     if (peerConnection) {
         peerConnection.close();
