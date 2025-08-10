@@ -31,6 +31,231 @@
     /* Для экранов шире 1024px (ноутбуки и десктопы) */
     @media (min-width: 1024px) {
         .video-container {
+            width: 30vw;
+            height: 25vh;
+        }
+    }
+    /* Для маленьких экранов (телефоны) */
+    @media (max-width: 768px) {
+        .video-container {
+            width: 90vw;
+            height: 50vh;
+            display: block;
+            margin: 10px auto;
+        }
+    }
+    video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .speed-indicator {
+        position: absolute;
+        top: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.85);
+        border-left: 3px solid red;
+        border-bottom: 3px solid red;
+        color: red;
+        font-size: 12px;
+        padding: 2px 6px;
+        line-height: 1.2;
+    }
+</style>
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+</head>
+<body>
+<h1>Видеочат РК</h1>
+
+<div class="video-container" id="localContainer">
+    <video id="localVideo" autoplay playsinline muted></video>
+    <div class="speed-indicator" id="speed-local">0 КБ/с</div>
+</div>
+
+<div class="video-container" id="remoteContainer">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <div class="speed-indicator" id="speed-remote">0 КБ/с</div>
+</div>
+
+<script>
+const socket = io('https://videoc-hatrk-server.onrender.com');
+let localStream;
+let remoteStream;
+let peerConnection;
+
+const config = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+
+async function startLocalStream() {
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById('localVideo').srcObject = localStream;
+    } catch (error) {
+        console.error('Ошибка доступа к медиа:', error);
+    }
+}
+
+async function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(config);
+
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+    });
+
+    remoteStream = new MediaStream();
+    document.getElementById('remoteVideo').srcObject = remoteStream;
+
+    peerConnection.ontrack = event => {
+        event.streams[0].getTracks().forEach(track => {
+            remoteStream.addTrack(track);
+        });
+    };
+
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            socket.emit('ice-candidate', event.candidate);
+        }
+    };
+
+    // Запуск замера скорости отдельно для локального и удалённого потока
+    measureConnectionSpeed(peerConnection, "speed-local", "outbound-rtp");
+    measureConnectionSpeed(peerConnection, "speed-remote", "inbound-rtp");
+}
+
+// Получение оффера
+socket.on('offer', async offer => {
+    await createPeerConnection();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('answer', answer);
+});
+
+// Получение ответа
+socket.on('answer', async answer => {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+// Получение ICE-кандидата
+socket.on('ice-candidate', async candidate => {
+    try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (error) {
+        console.error('Ошибка добавления ICE-кандидата:', error);
+    }
+});
+
+// Создание оффера
+async function createOffer() {
+    await createPeerConnection();
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('offer', offer);
+}
+
+// Запуск соединения
+startLocalStream().then(() => {
+    setTimeout(createOffer, 2000);
+});
+
+// ======= Функции замера скорости =======
+function measureConnectionSpeed(pc, elementId, directionType) {
+    let previousBytes = 0;
+    setInterval(async () => {
+        try {
+            const stats = await pc.getStats();
+            let bytesNow = 0;
+            stats.forEach(report => {
+                if (report.type === directionType && !report.isRemote) {
+                    if (directionType === "outbound-rtp" && report.bytesSent) {
+                        bytesNow += report.bytesSent;
+                    }
+                    if (directionType === "inbound-rtp" && report.bytesReceived) {
+                        bytesNow += report.bytesReceived;
+                    }
+                }
+            });
+            const bytesPerSecond = bytesNow - previousBytes;
+            previousBytes = bytesNow;
+            updateSpeedIndicator(elementId, bytesPerSecond);
+        } catch (e) {
+            console.error("Ошибка измерения скорости:", e);
+        }
+    }, 1000);
+}
+
+function updateSpeedIndicator(elementId, bytesPerSecond) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    let speed;
+    if (bytesPerSecond >= 1000000) {
+        speed = (bytesPerSecond / 1000000).toFixed(1) + ' МБ/с';
+    } else if (bytesPerSecond >= 1000) {
+        speed = (bytesPerSecond / 1000).toFixed(0) + ' КБ/с';
+    } else {
+        speed = bytesPerSecond + ' Б/с';
+    }
+    el.textContent = speed;
+}
+
+// === ЛОГИКА АВТОВОССТАНОВЛЕНИЯ СОЕДИНЕНИЯ ===
+socket.on('connect', async () => {
+    console.log("Подключено к серверу — пересоздаём соединение...");
+    await restartConnection();
+});
+
+async function restartConnection() {
+    console.log("Перезапуск соединения...");
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    await startLocalStream();
+    await createOffer();
+}
+
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>ВидеочатРК</title>
+<link rel="icon" type="image/png" href="favicon.png?v=3">
+<style>
+    body {
+        background-color: black;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin: 0;
+        padding: 0;
+    }
+    h1 {
+        color: red;
+        margin: 10px 0;
+    }
+    .video-container {
+        position: relative;
+        display: inline-block;
+        border: 3px solid red;
+        background: black;
+        margin: 5px;
+        vertical-align: top;
+        width: 45vw;
+        height: 40vh;
+        overflow: hidden;
+    }
+    /* Для экранов шире 1024px (ноутбуки и десктопы) */
+    @media (min-width: 1024px) {
+        .video-container {
             width: 35vw;
             height: 75vh;
         }
