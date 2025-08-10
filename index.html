@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
-<link rel="icon" type="image/png" href="favicon.png?v=3">
+<link rel="icon" type="image/png" href="favicon.png?v=1754824426">
 <style>
     body {
         background-color: black;
@@ -93,7 +93,7 @@
     }
 
 </style>
-<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js?v=1754824426"></script>
 </head>
 <body>
 <h1>Видеочат РК</h1>
@@ -109,10 +109,10 @@
 </div>
 
 <script>
-const socket = io('https://videoc-hatrk-server.onrender.com');
+const socket = io('https://videoc-hatrk-server.onrender.com?v=1754824426');
 
 // === Ускоренное переподключение и UI-индикатор ===
-const socket = io('https://videoc-hatrk-server.onrender.com', {
+const socket = io('https://videoc-hatrk-server.onrender.com?v=1754824426', {
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 200,
