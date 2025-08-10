@@ -31,8 +31,8 @@
     /* Для экранов шире 1024px (ноутбуки и десктопы) */
     @media (min-width: 1024px) {
         .video-container {
-            width: 35vw;
-            height: 75vh;
+            width: 30vw;
+            height: 25vh;
         }
     }
     /* Для маленьких экранов (телефоны) */
@@ -113,14 +113,11 @@ async function createPeerConnection() {
 
     // Назначаем удалённый поток напрямую из события ontrack (чтобы не дублировать треки)
     peerConnection.ontrack = event => {
-        let remoteVid = document.getElementById('remoteVideo');
-        if (remoteVid) {
-            remoteVid.srcObject = null; // Очистка старого потока
-        }
-        // Берём первый доступный stream отдалённого участника и назначаем в элемент
         const remoteVid = document.getElementById('remoteVideo');
-        if (event.streams && event.streams[0]) {
-            remoteVid.srcObject = event.streams[0];
+        if (remoteVid) {
+            remoteVid.srcObject = null; // Очистка старого потока перед назначением нового
+        }
+        remoteVid.srcObject = event.streams[0];
         } else {
             // Фоллбек — собираем треки в новый MediaStream
             const fallbackStream = new MediaStream();
