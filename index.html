@@ -97,32 +97,28 @@ async function startLocalStream() {
 }
 
 async function createPeerConnection() {
-    // Очистка старого удалённого потока
-    if (remoteStream) {
-        remoteStream.getTracks().forEach(track => track.stop());
-    }
-    document.getElementById('remoteVideo').srcObject = null;
-    if (peerConnection) {
-        peerConnection.ontrack = null;
-        peerConnection.ontrack = null;
-        peerConnection.close();
-        peerConnection = null;
-    }
-
+    // Создаём новый PeerConnection (предполагается, что любые старые ПК уже закрыты в restartConnection)
     peerConnection = new RTCPeerConnection(config);
 
-    localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-    });
-
-    remoteStream = new MediaStream();
-    document.getElementById('remoteVideo').srcObject = remoteStream;
-
-    peerConnection.ontrack = event => {
-        event.streams[0].getTracks().forEach(track => {
-            if (!remoteStream.getTracks().includes(track)) {
-                remoteStream.addTrack(track);
+    // Добавляем локальные треки, если они есть
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
         });
+    }
+
+    // Назначаем удалённый поток напрямую из события ontrack (чтобы не дублировать треки)
+    peerConnection.ontrack = event => {
+        // Берём первый доступный stream отдалённого участника и назначаем в элемент
+        const remoteVid = document.getElementById('remoteVideo');
+        if (event.streams && event.streams[0]) {
+            remoteVid.srcObject = event.streams[0];
+        } else {
+            // Фоллбек — собираем треки в новый MediaStream
+            const fallbackStream = new MediaStream();
+            event.track && fallbackStream.addTrack(event.track);
+            remoteVid.srcObject = fallbackStream;
+        }
     };
 
     peerConnection.onicecandidate = event => {
@@ -138,7 +134,10 @@ async function createPeerConnection() {
 
 // Получение оффера
 socket.on('offer', async offer => {
-    await createPeerConnection();
+    // Если PeerConnection уже есть — переиспользуем, иначе создаём новый
+    if (!peerConnection) {
+        await createPeerConnection();
+    }
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
@@ -161,7 +160,10 @@ socket.on('ice-candidate', async candidate => {
 
 // Создание оффера
 async function createOffer() {
-    await createPeerConnection();
+    // Создаём PeerConnection если отсутствует
+    if (!peerConnection) {
+        await createPeerConnection();
+    }
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
     socket.emit('offer', offer);
@@ -222,7 +224,6 @@ socket.on('connect', async () => {
 async function restartConnection() {
     console.log("Перезапуск соединения...");
     if (peerConnection) {
-        peerConnection.ontrack = null;
         peerConnection.close();
         peerConnection = null;
     }
@@ -230,11 +231,6 @@ async function restartConnection() {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
     }
-    if (remoteStream) {
-        remoteStream.getTracks().forEach(track => track.stop());
-        remoteStream = null;
-    }
-    document.getElementById('remoteVideo').srcObject = null;
     await startLocalStream();
     await createOffer();
 }
