@@ -59,7 +59,7 @@ let localStream, peerConnection;
 let isMicOn = true, isCamOn = true, usingFrontCam = true;
 let roomID, userName;
 
-// ICE с STUN + TURN
+// ICE с STUN + бесплатный TURN
 const config = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -83,6 +83,9 @@ async function createPeerConnection() {
     peerConnection.onicecandidate = event => {
         if(event.candidate) socket.emit('ice-candidate', { roomID, candidate: event.candidate });
     };
+
+    peerConnection.oniceconnectionstatechange = () => console.log('ICE state:', peerConnection.iceConnectionState);
+    peerConnection.onconnectionstatechange = () => console.log('Peer state:', peerConnection.connectionState);
 }
 
 socket.on('user-joined', async ({ id, name }) => {
@@ -170,24 +173,4 @@ document.getElementById('btnCam').addEventListener('click', ()=>{
     document.querySelector('#btnCam .material-icons').textContent = isCamOn?'videocam':'videocam_off';
 });
 document.getElementById('btnSwitch').addEventListener('click', async ()=>{
-    usingFrontCam = !usingFrontCam;
-    const videoTrack = (await navigator.mediaDevices.getUserMedia({ video:{facingMode:usingFrontCam?"user":"environment"} })).getVideoTracks()[0];
-    const sender = peerConnection.getSenders().find(s=>s.track.kind==='video');
-    sender.replaceTrack(videoTrack);
-    const oldTrack = localStream.getVideoTracks()[0];
-    localStream.removeTrack(oldTrack);
-    oldTrack.stop();
-    localStream.addTrack(videoTrack);
-    document.getElementById('miniVideo').srcObject=localStream;
-});
-document.getElementById('btnEnd').addEventListener('click', ()=>{
-    if(peerConnection) peerConnection.close();
-    if(localStream) localStream.getTracks().forEach(t=>t.stop());
-    window.location.reload();
-});
-
-});
-</script>
-
-</body>
-</html>
+    usingFron
