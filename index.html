@@ -4,28 +4,22 @@
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<!-- Favicon -->
 <link rel="icon" href="значок.png" type="image/png">
-
-<!-- Material Icons -->
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
 <style>
-  body, html { margin:0; padding:0; background:black; overflow:hidden; font-family:Arial; }
-  #mainContainer { position:fixed; top:0; left:0; width:100vw; height:100vh; background:black; }
-  #mainVideo { width:100%; height:100%; object-fit:cover; }
-  #miniContainer { position:fixed; bottom:100px; right:20px; width:200px; height:150px; border:2px solid red; background:black; border-radius:8px; overflow:hidden; z-index:10; cursor:move; touch-action:none; }
-  #miniVideo { width:100%; height:100%; object-fit:cover; }
-  .controls { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:15px; z-index:20; }
-  .btn { width:50px; height:50px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; font-size:24px; color:white; background:rgba(50,50,50,0.7); }
-  .btn.red { background:red; }
-  .btn:active { transform:scale(0.9); }
-
-  /* Форма входа */
-  #joinForm { position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:30; color:white; text-align:center; }
-  #joinForm input { padding:5px 10px; font-size:16px; margin-bottom:5px; width:200px; }
-  #joinForm button { padding:5px 15px; font-size:16px; }
+body, html { margin:0; padding:0; background:black; overflow:hidden; font-family:Arial; }
+#mainContainer { position:fixed; top:0; left:0; width:100vw; height:100vh; background:black; }
+#mainVideo { width:100%; height:100%; object-fit:cover; }
+#miniContainer { position:fixed; bottom:100px; right:20px; width:200px; height:150px; border:2px solid red; background:black; border-radius:8px; overflow:hidden; z-index:10; cursor:move; touch-action:none; }
+#miniVideo { width:100%; height:100%; object-fit:cover; }
+.controls { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:15px; z-index:20; }
+.btn { width:50px; height:50px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; font-size:24px; color:white; background:rgba(50,50,50,0.7); }
+.btn.red { background:red; }
+.btn:active { transform:scale(0.9); }
+#joinForm { position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:30; color:white; text-align:center; }
+#joinForm input { padding:5px 10px; font-size:16px; margin-bottom:5px; width:200px; }
+#joinForm button { padding:5px 15px; font-size:16px; }
 </style>
 
 <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
@@ -59,18 +53,18 @@
 const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
 const socket = io(SERVER_URL);
 
-// Логи соединения
-socket.on("connect", () => console.log("Socket connected:", socket.id));
-socket.on("connect_error", (err) => console.error("Connect error:", err));
-socket.on("disconnect", () => console.log("Disconnected"));
-
 let localStream, peerConnection;
 let isMicOn = true, isCamOn = true, usingFrontCam = true;
 let roomID, userName;
 
-const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+// ICE с STUN + TURN
+const config = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'turn:numb.viagenie.ca:3478', username: 'webrtc', credential: 'webrtc' }
+    ]
+};
 
-// Функция запуска локального видео
 async function startLocalStream() {
     localStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: usingFrontCam ? "user" : "environment" },
@@ -79,7 +73,6 @@ async function startLocalStream() {
     document.getElementById('miniVideo').srcObject = localStream;
 }
 
-// Создание PeerConnection
 async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(config);
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -90,97 +83,8 @@ async function createPeerConnection() {
     };
 }
 
-// Обработчики Socket.IO
 socket.on('user-joined', async ({ id, name }) => {
     if(!peerConnection) await createPeerConnection();
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', { roomID, offer });
-});
-
-socket.on('offer', async ({ from, offer }) => {
-    if(!peerConnection) await createPeerConnection();
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', { roomID, answer });
-});
-
-socket.on('answer', async ({ from, answer }) => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-});
-
-socket.on('ice-candidate', async ({ from, candidate }) => {
-    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); }
-    catch(e){ console.error(e); }
-});
-
-// Обработка кнопки "Войти"
-document.getElementById("joinBtn").addEventListener("click", async () => {
-    userName = document.getElementById("userName").value || "Гость";
-    roomID = document.getElementById("roomID").value || "room1";
-
-    socket.emit("join-room", { roomID, name: userName });
-    document.getElementById("joinForm").style.display = "none";
-
-    await startLocalStream();
-});
-
-// Перетаскивание мини-видео и смена мест
-(function() {
-    const mini = document.getElementById("miniContainer");
-    const mainVideo = document.getElementById("mainVideo");
-    const miniVideo = document.getElementById("miniVideo");
-    let isDragging = false, offsetX=0, offsetY=0;
-
-    function startDrag(x,y){ isDragging=true; offsetX=x-mini.getBoundingClientRect().left; offsetY=y-mini.getBoundingClientRect().top; mini.style.transition="none"; }
-    function dragMove(x,y){ if(!isDragging) return; mini.style.left=`${x-offsetX}px`; mini.style.top=`${y-offsetY}px`; }
-    function endDrag(){ isDragging=false; mini.style.transition="all 0.2s"; }
-
-    mini.addEventListener("mousedown", e=>startDrag(e.clientX,e.clientY));
-    document.addEventListener("mousemove", e=>dragMove(e.clientX,e.clientY));
-    document.addEventListener("mouseup", endDrag);
-
-    mini.addEventListener("touchstart", e=>startDrag(e.touches[0].clientX,e.touches[0].clientY),{passive:true});
-    document.addEventListener("touchmove", e=>dragMove(e.touches[0].clientX,e.touches[0].clientY),{passive:true});
-    document.addEventListener("touchend", endDrag);
-
-    mini.addEventListener("click", ()=>{
-        if(isDragging) return;
-        const temp = mainVideo.srcObject;
-        mainVideo.srcObject = miniVideo.srcObject;
-        miniVideo.srcObject = temp;
-    });
-})();
-
-// Кнопки управления
-document.getElementById('btnMic').addEventListener('click', ()=>{
-    isMicOn = !isMicOn;
-    localStream.getAudioTracks().forEach(t=>t.enabled=isMicOn);
-    document.querySelector('#btnMic .material-icons').textContent = isMicOn?'mic':'mic_off';
-});
-document.getElementById('btnCam').addEventListener('click', ()=>{
-    isCamOn = !isCamOn;
-    localStream.getVideoTracks().forEach(t=>t.enabled=isCamOn);
-    document.querySelector('#btnCam .material-icons').textContent = isCamOn?'videocam':'videocam_off';
-});
-document.getElementById('btnSwitch').addEventListener('click', async ()=>{
-    usingFrontCam = !usingFrontCam;
-    const videoTrack = (await navigator.mediaDevices.getUserMedia({ video:{facingMode:usingFrontCam?"user":"environment"} })).getVideoTracks()[0];
-    const sender = peerConnection.getSenders().find(s=>s.track.kind==='video');
-    sender.replaceTrack(videoTrack);
-    const oldTrack = localStream.getVideoTracks()[0];
-    localStream.removeTrack(oldTrack);
-    oldTrack.stop();
-    localStream.addTrack(videoTrack);
-    document.getElementById('miniVideo').srcObject=localStream;
-});
-document.getElementById('btnEnd').addEventListener('click', ()=>{
-    if(peerConnection) peerConnection.close();
-    if(localStream) localStream.getTracks().forEach(t=>t.stop());
-    window.location.reload();
-});
-</script>
-
-</body>
-</html>
+    socket.emit('offer',
