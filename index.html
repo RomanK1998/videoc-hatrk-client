@@ -31,7 +31,7 @@ body, html { margin:0; padding:0; background:black; overflow:hidden; font-family
     <br>
     <input id="roomID" placeholder="ID комнаты">
     <br>
-    <button id="joinBtn">Войти</button>
+    <button id="joinBtn" type="button">Войти</button>
 </div>
 
 <div id="mainContainer">
@@ -50,6 +50,8 @@ body, html { margin:0; padding:0; background:black; overflow:hidden; font-family
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', () => {
+
 const SERVER_URL = "https://videoc-hatrk-server.onrender.com";
 const socket = io(SERVER_URL);
 
@@ -87,4 +89,105 @@ socket.on('user-joined', async ({ id, name }) => {
     if(!peerConnection) await createPeerConnection();
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-    socket.emit('offer',
+    socket.emit('offer', { roomID, offer });
+});
+
+socket.on('existing-users', async users => {
+    if(!peerConnection) await createPeerConnection();
+    for(const u of users){
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('offer', { roomID, offer });
+    }
+});
+
+socket.on('offer', async ({ from, offer }) => {
+    if(!peerConnection) await createPeerConnection();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('answer', { roomID, answer });
+});
+
+socket.on('answer', async ({ from, answer }) => {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on('ice-candidate', async ({ from, candidate }) => {
+    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); }
+    catch(e){ console.error(e); }
+});
+
+// Вход в комнату
+document.getElementById("joinBtn").addEventListener("click", async () => {
+    userName = document.getElementById("userName").value || "Гость";
+    roomID = document.getElementById("roomID").value.trim() || "room1";
+
+    if(!roomID) { alert("Введите ID комнаты!"); return; }
+
+    socket.emit("join-room", { roomID, name: userName });
+    document.getElementById("joinForm").style.display = "none";
+
+    await startLocalStream();
+});
+
+// Перетаскивание мини-видео и смена мест
+(function(){
+    const mini = document.getElementById("miniContainer");
+    const mainVideo = document.getElementById("mainVideo");
+    const miniVideo = document.getElementById("miniVideo");
+    let isDragging = false, offsetX=0, offsetY=0;
+
+    function startDrag(x,y){ isDragging=true; offsetX=x-mini.getBoundingClientRect().left; offsetY=y-mini.getBoundingClientRect().top; mini.style.transition="none"; }
+    function dragMove(x,y){ if(!isDragging) return; mini.style.left=`${x-offsetX}px`; mini.style.top=`${y-offsetY}px`; }
+    function endDrag(){ isDragging=false; mini.style.transition="all 0.2s"; }
+
+    mini.addEventListener("mousedown", e=>startDrag(e.clientX,e.clientY));
+    document.addEventListener("mousemove", e=>dragMove(e.clientX,e.clientY));
+    document.addEventListener("mouseup", endDrag);
+
+    mini.addEventListener("touchstart", e=>startDrag(e.touches[0].clientX,e.touches[0].clientY),{passive:true});
+    document.addEventListener("touchmove", e=>dragMove(e.touches[0].clientX,e.touches[0].clientY),{passive:true});
+    document.addEventListener("touchend", endDrag);
+
+    mini.addEventListener("click", ()=>{
+        if(isDragging) return;
+        const temp = mainVideo.srcObject;
+        mainVideo.srcObject = miniVideo.srcObject;
+        miniVideo.srcObject = temp;
+    });
+})();
+
+// Кнопки управления
+document.getElementById('btnMic').addEventListener('click', ()=>{
+    isMicOn = !isMicOn;
+    localStream.getAudioTracks().forEach(t=>t.enabled=isMicOn);
+    document.querySelector('#btnMic .material-icons').textContent = isMicOn?'mic':'mic_off';
+});
+document.getElementById('btnCam').addEventListener('click', ()=>{
+    isCamOn = !isCamOn;
+    localStream.getVideoTracks().forEach(t=>t.enabled=isCamOn);
+    document.querySelector('#btnCam .material-icons').textContent = isCamOn?'videocam':'videocam_off';
+});
+document.getElementById('btnSwitch').addEventListener('click', async ()=>{
+    usingFrontCam = !usingFrontCam;
+    const videoTrack = (await navigator.mediaDevices.getUserMedia({ video:{facingMode:usingFrontCam?"user":"environment"} })).getVideoTracks()[0];
+    const sender = peerConnection.getSenders().find(s=>s.track.kind==='video');
+    sender.replaceTrack(videoTrack);
+    const oldTrack = localStream.getVideoTracks()[0];
+    localStream.removeTrack(oldTrack);
+    oldTrack.stop();
+    localStream.addTrack(videoTrack);
+    document.getElementById('miniVideo').srcObject=localStream;
+});
+document.getElementById('btnEnd').addEventListener('click', ()=>{
+    if(peerConnection) peerConnection.close();
+    if(localStream) localStream.getTracks().forEach(t=>t.stop());
+    window.location.reload();
+});
+
+});
+</script>
+
+</body>
+</html>
