@@ -2,154 +2,246 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>ВидеочатРК</title>
-<link rel="icon" type="image/png" href="favicon.png">
+<title>Видеочат РК</title>
+<link rel="icon" type="image/png" href="favicon.png?v=3">
 <style>
-body { background:black; color:white; font-family:Arial; margin:0; padding:0; }
-h1 { color:red; text-align:center; margin:10px 0; }
-#userList { padding:10px; max-width:300px; }
-#contacts li { cursor:pointer; padding:5px; border-bottom:1px solid #333; }
-#contacts li:hover { background:#222; }
-.video-container { display:inline-block; width:45vw; height:40vh; margin:5px; border:2px solid red; position:relative; }
-video { width:100%; height:100%; object-fit:cover; }
-.controls { text-align:center; margin:10px; }
-button { padding:8px 12px; margin:5px; border:none; border-radius:5px; }
-button.red { background:red; color:white; }
-button.green { background:green; color:white; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #121212;
+    color: white;
+    display: flex;
+    height: 100vh;
+}
+#sidebar {
+    width: 280px;
+    background: #1f1f1f;
+    overflow-y: auto;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+}
+#sidebar h2 {
+    padding: 12px;
+    margin: 0;
+    border-bottom: 1px solid #333;
+    color: #00ff00;
+}
+#contacts {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    flex: 1;
+}
+#contacts li {
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #333;
+}
+#contacts li:hover { background: #2a2a2a; }
+#contacts li span.status { font-size: 12px; color: #888; }
+
+#main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: black;
+    position: relative;
+}
+
+.video-container {
+    width: 80%;
+    max-width: 700px;
+    height: 60%;
+    margin: 10px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid #00ff00;
+    background: black;
+}
+
+video { width: 100%; height: 100%; object-fit: cover; }
+
+.controls {
+    position: absolute;
+    bottom: 20px;
+    display: flex;
+    gap: 15px;
+}
+button {
+    padding: 12px 18px;
+    border: none;
+    border-radius: 50%;
+    background: #00ff00;
+    color: black;
+    cursor: pointer;
+}
+button.red { background: red; color: white; }
+
+#reconnectOverlay {
+    display: none;
+    position: absolute;
+    top:0; left:0; width:100%; height:100%;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    font-size: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+#reconnectOverlay div { margin-top: 8px; font-size: 14px; color: #ccc; }
+
+@media (max-width: 768px){
+    body { flex-direction: column; }
+    #sidebar { width: 100%; height: 180px; border-right: none; border-bottom: 1px solid #333; flex-direction: row; overflow-x: auto; }
+    #contacts li { flex: 0 0 auto; border-bottom: none; border-right: 1px solid #333; }
+    #main { flex: 1; }
+    .video-container { width: 90%; height: 40%; }
+}
 </style>
 <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
 </head>
 <body>
-<h1>Видеочат РК</h1>
 
-<div id="registerDiv">
-  <input type="text" id="usernameInput" placeholder="Ваше имя">
-  <button id="btnRegister">Зарегистрироваться</button>
+<div id="sidebar">
+    <h2>Контакты</h2>
+    <ul id="contacts"></ul>
 </div>
 
-<div id="userList" style="display:none;">
-  <h2>Контакты</h2>
-  <ul id="contacts"></ul>
-</div>
-
-<div class="video-container">
-  <video id="localVideo" autoplay playsinline muted></video>
-</div>
-<div class="video-container">
-  <video id="remoteVideo" autoplay playsinline></video>
-</div>
-
-<div class="controls">
-  <button id="btnEnd" class="red">Завершить звонок</button>
+<div id="main">
+    <div class="video-container">
+        <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+    <div class="video-container">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div id="reconnectOverlay">
+            <div>Переподключение…</div>
+            <div id="reconnectStatus">Ожидание соединения</div>
+        </div>
+    </div>
+    <div class="controls">
+        <button id="callBtn">Позвонить</button>
+        <button id="hangupBtn" class="red">Завершить</button>
+        <button id="micBtn">Микрофон</button>
+        <button id="camBtn">Камера</button>
+    </div>
 </div>
 
 <script>
 const socket = io('https://videoc-hatrk-server.onrender.com');
-let localStream, remoteStream;
-let peerConnection;
-let myId;
 
-// ===== Регистрация =====
-document.getElementById('btnRegister').onclick = async () => {
-  const username = document.getElementById('usernameInput').value.trim();
-  if(!username) return alert("Введите имя!");
-  socket.emit("register", username, (res) => {
-    if(res.success){
-      myId = res.id;
-      document.getElementById('registerDiv').style.display = "none";
-      document.getElementById('userList').style.display = "block";
-      startLocalStream();
-    }
-  });
-};
+let localStream, remoteStream, peerConnection;
+let currentCallUser = null;
+const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const contactsEl = document.getElementById('contacts');
 
-// ===== Список контактов =====
-socket.on("update-users", users => {
-  const list = document.getElementById("contacts");
-  list.innerHTML = "";
-  users.forEach(user => {
-    if(user.id === myId) return;
-    const li = document.createElement("li");
-    li.textContent = `${user.username} (${user.status})`;
-    li.style.color = user.status==="busy"?"red":"green";
-    li.onclick = () => {
-      if(user.status==="online") callUser(user.id);
-      else if(user.status==="busy") alert(`${user.username} занят. Можно переключиться после завершения текущего звонка.`);
+// ==== Регистрация пользователя ====
+let username = prompt("Введите имя для регистрации");
+socket.emit("register", username);
+
+// ==== Получение списка контактов ====
+socket.on("contacts", users => {
+    contactsEl.innerHTML = "";
+    users.forEach(user => {
+        if(user.name === username) return;
+        const li = document.createElement("li");
+        li.textContent = user.name;
+        const statusSpan = document.createElement("span");
+        statusSpan.className = "status";
+        statusSpan.textContent = user.inCall ? "В звонке" : "Свободен";
+        li.appendChild(statusSpan);
+        li.onclick = () => {
+            if(currentCallUser) {
+                if(confirm("Вы уже в звонке. Разорвать и начать новый?")) {
+                    endCall();
+                    startCall(user.name);
+                }
+            } else {
+                startCall(user.name);
+            }
+        };
+        contactsEl.appendChild(li);
+    });
+});
+
+// ==== Локальный поток ====
+async function startLocalStream() {
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+        document.getElementById('localVideo').srcObject = localStream;
+    } catch(e) { console.error(e); alert("Не удалось получить доступ к камере/микрофону"); }
+}
+
+// ==== PeerConnection ====
+async function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(config);
+    if(localStream) localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    peerConnection.ontrack = e => {
+        if(e.streams && e.streams[0]) document.getElementById('remoteVideo').srcObject = e.streams[0];
     };
-    list.appendChild(li);
-  });
-});
 
-// ===== Локальное видео =====
-async function startLocalStream(){
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
-    document.getElementById('localVideo').srcObject = localStream;
-  } catch(e){ console.error(e); }
+    peerConnection.onicecandidate = e => { if(e.candidate) socket.emit("ice-candidate", { candidate:e.candidate, to:currentCallUser }); };
 }
 
-// ===== Вызов =====
-async function callUser(targetId){
-  peerConnection = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
-
-  peerConnection.ontrack = e => {
-    document.getElementById('remoteVideo').srcObject = e.streams[0];
-  };
-
-  peerConnection.onicecandidate = e => {
-    if(e.candidate) socket.emit("ice-candidate", targetId, e.candidate);
-  };
-
-  const offer = await peerConnection.createOffer();
-  await peerConnection.setLocalDescription(offer);
-  socket.emit("call-user", targetId, offer);
+// ==== Звонок ====
+async function startCall(user) {
+    currentCallUser = user;
+    await createPeerConnection();
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit("offer", { offer, to:user });
 }
 
-// ===== Принятие звонка =====
-socket.on("incoming-call", async (fromId, offer, username) => {
-  if(peerConnection) peerConnection.close();
-  peerConnection = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
+// ==== Завершение ====
+function endCall() {
+    if(peerConnection) peerConnection.close();
+    peerConnection = null;
+    currentCallUser = null;
+    document.getElementById('remoteVideo').srcObject = null;
+}
 
-  peerConnection.ontrack = e => document.getElementById('remoteVideo').srcObject = e.streams[0];
-  peerConnection.onicecandidate = e => { if(e.candidate) socket.emit("ice-candidate", fromId, e.candidate); };
-
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-  socket.emit("answer-call", fromId, answer);
+// ==== Обработка сигналов ====
+socket.on("offer", async data => {
+    if(currentCallUser) return;
+    currentCallUser = data.from;
+    await createPeerConnection();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit("answer", { answer, to:data.from });
 });
 
-// ===== Ответ на звонок =====
-socket.on("call-answered", async (answer) => {
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+socket.on("answer", async data => {
+    if(peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
 });
 
-// ===== ICE кандидаты =====
-socket.on("ice-candidate", async (candidate) => {
-  try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e){console.error(e);}
+socket.on("ice-candidate", async data => {
+    if(peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
 });
 
-// ===== Завершение звонка =====
-document.getElementById('btnEnd').onclick = () => {
-  if(peerConnection) peerConnection.close();
-  peerConnection = null;
-  socket.emit("end-call");
-  document.getElementById('remoteVideo').srcObject = null;
+// ==== Управление кнопками ====
+document.getElementById('hangupBtn').onclick = endCall;
+
+document.getElementById('micBtn').onclick = () => {
+    if(localStream) {
+        localStream.getAudioTracks()[0].enabled = !localStream.getAudioTracks()[0].enabled;
+    }
+};
+document.getElementById('camBtn').onclick = () => {
+    if(localStream) {
+        localStream.getVideoTracks()[0].enabled = !localStream.getVideoTracks()[0].enabled;
+    }
 };
 
-socket.on("call-ended", () => {
-  if(peerConnection) peerConnection.close();
-  peerConnection = null;
-  document.getElementById('remoteVideo').srcObject = null;
-  alert("Звонок завершён.");
-});
-
-// ===== Уведомление если пользователь занят =====
-socket.on("user-busy", (targetId) => {
-  alert("Пользователь занят, попробуйте позже.");
-});
+// ==== Авто-подключение ====
+startLocalStream();
 </script>
 </body>
 </html>
