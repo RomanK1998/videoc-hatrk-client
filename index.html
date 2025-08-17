@@ -49,37 +49,35 @@ let localStream, remoteStream;
 let peerConnection;
 let myId;
 
-// Проверяем, есть ли сохранённый ID
+// ===== Проверяем localStorage для автологина =====
 const savedUserId = localStorage.getItem("userId");
-
-// ===== Регистрация =====
-document.getElementById('btnRegister').onclick = async () => {
-  let username = document.getElementById('usernameInput').value.trim();
-
-  if(!username && !savedUserId) return alert("Введите имя!");
-
-  socket.emit("register", { username, userId: savedUserId }, (res) => {
-    if(res.success){
-      localStorage.setItem("userId", res.id); // сохраняем навсегда
-      myId = res.id;
-      document.getElementById('registerDiv').style.display = "none";
-      document.getElementById('userList').style.display = "block";
-      startLocalStream();
-    }
-  });
-};
-
-// Если есть сохранённый ID — автоматически подключаемся
 if(savedUserId){
-  socket.emit("register", { username:null, userId: savedUserId }, (res) => {
+  socket.emit("register", {username:null, userId:savedUserId}, (res)=>{
     if(res.success){
       myId = res.id;
+      document.getElementById('usernameInput').value = res.username;
       document.getElementById('registerDiv').style.display = "none";
       document.getElementById('userList').style.display = "block";
       startLocalStream();
     }
   });
 }
+
+// ===== Регистрация =====
+document.getElementById('btnRegister').onclick = async () => {
+  const username = document.getElementById('usernameInput').value.trim();
+  if(!username) return alert("Введите имя!");
+  socket.emit("register", {username, userId:null}, (res)=>{
+    if(res.success){
+      myId = res.id;
+      localStorage.setItem("userId", res.id); // сохраняем ID для автологина
+      document.getElementById('usernameInput').value = res.username;
+      document.getElementById('registerDiv').style.display = "none";
+      document.getElementById('userList').style.display = "block";
+      startLocalStream();
+    }
+  });
+};
 
 // ===== Список контактов =====
 socket.on("update-users", users => {
