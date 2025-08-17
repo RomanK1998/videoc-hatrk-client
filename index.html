@@ -3,6 +3,219 @@
 <head>
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
+<link rel="icon" type="image/png" href="значок.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body, html {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        background: #000;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    /* Основное видео */
+    #mainContainer {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%;
+        height: 100%;
+        background: black;
+    }
+    #mainVideo {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    /* Мини-видео */
+    #miniContainer {
+        position: fixed;
+        bottom: 100px;
+        right: 20px;
+        width: 120px;
+        height: 160px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 2px solid #25D366;
+        z-index: 10;
+        cursor: move;
+        touch-action: none;
+        background: black;
+    }
+    #miniVideo {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    /* Кнопки в стиле WhatsApp */
+    .controls {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 20px;
+        z-index: 20;
+    }
+    .btn {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: white;
+        background: #128C7E;
+    }
+    .btn.red { background: #D93025; }
+    .btn:active { transform: scale(0.9); }
+</style>
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+</head>
+<body>
+
+<div id="mainContainer">
+    <video id="mainVideo" autoplay playsinline></video>
+</div>
+
+<div id="miniContainer">
+    <video id="miniVideo" autoplay playsinline muted></video>
+</div>
+
+<div class="controls">
+    <button id="btnMic" class="btn">🎤</button>
+    <button id="btnCam" class="btn">📷</button>
+    <button id="btnSwitch" class="btn">🔄</button>
+    <button id="btnEnd" class="btn red">📞</button>
+</div>
+
+<script>
+const socket = io('https://videoc-hatrk-server.onrender.com'); // ваш сервер
+let localStream, peerConnection;
+let isMicOn = true, isCamOn = true;
+let usingFrontCam = true;
+
+const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+// ===== Локальный поток =====
+async function startLocalStream() {
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: usingFrontCam ? "user" : "environment" },
+            audio: true 
+        });
+        document.getElementById('miniVideo').srcObject = localStream;
+    } catch (e) {
+        console.error("Ошибка доступа к камере/микрофону", e);
+    }
+}
+
+// ===== PeerConnection =====
+async function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(config);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    peerConnection.ontrack = event => {
+        document.getElementById('mainVideo').srcObject = event.streams[0];
+    };
+
+    peerConnection.onicecandidate = event => {
+        if(event.candidate) socket.emit('ice-candidate', event.candidate);
+    };
+}
+
+// ===== Socket.io события =====
+socket.on('offer', async offer => {
+    if(!peerConnection) await createPeerConnection();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('answer', answer);
+});
+
+socket.on('answer', async answer => {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on('ice-candidate', async candidate => {
+    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } 
+    catch(e){ console.error(e); }
+});
+
+// ===== Создание оффера =====
+async function createOffer() {
+    if(!peerConnection) await createPeerConnection();
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('offer', offer);
+}
+
+// ===== Запуск =====
+startLocalStream().then(()=>setTimeout(createOffer, 1000));
+
+// ===== Мини-видео управление =====
+(function enableMiniControls() {
+    const mini = document.getElementById("miniContainer");
+    const mainVideo = document.getElementById("mainVideo");
+    const miniVideo = document.getElementById("miniVideo");
+    let dragging = false, offsetX=0, offsetY=0;
+
+    function startDrag(x,y){ dragging=true; offsetX=x-mini.getBoundingClientRect().left; offsetY=y-mini.getBoundingClientRect().top; mini.style.transition="none";}
+    function dragMove(x,y){ if(!dragging) return; mini.style.left=`${x-offsetX}px`; mini.style.top=`${y-offsetY}px`; }
+    function endDrag(){ dragging=false; mini.style.transition="all 0.2s"; }
+
+    mini.addEventListener("mousedown", e=>startDrag(e.clientX,e.clientY));
+    document.addEventListener("mousemove", e=>dragMove(e.clientX,e.clientY));
+    document.addEventListener("mouseup", endDrag);
+
+    mini.addEventListener("touchstart", e=>{ const t=e.touches[0]; startDrag(t.clientX,t.clientY); }, {passive:true});
+    document.addEventListener("touchmove", e=>{ const t=e.touches[0]; dragMove(t.clientX,t.clientY); }, {passive:true});
+    document.addEventListener("touchend", endDrag);
+
+    mini.addEventListener("click", ()=>{
+        const tmp = mainVideo.srcObject;
+        mainVideo.srcObject = miniVideo.srcObject;
+        miniVideo.srcObject = tmp;
+    });
+})();
+
+// ===== Кнопки =====
+document.getElementById('btnMic').addEventListener('click', ()=>{
+    isMicOn = !isMicOn;
+    localStream.getAudioTracks().forEach(track=>track.enabled=isMicOn);
+});
+document.getElementById('btnCam').addEventListener('click', ()=>{
+    isCamOn = !isCamOn;
+    localStream.getVideoTracks().forEach(track=>track.enabled=isCamOn);
+});
+document.getElementById('btnSwitch').addEventListener('click', async ()=>{
+    usingFrontCam = !usingFrontCam;
+    const videoTrack = (await navigator.mediaDevices.getUserMedia({ video:{ facingMode: usingFrontCam?"user":"environment" } })).getVideoTracks()[0];
+    const sender = peerConnection.getSenders().find(s=>s.track.kind==='video');
+    sender.replaceTrack(videoTrack);
+    localStream.removeTrack(localStream.getVideoTracks()[0]);
+    localStream.addTrack(videoTrack);
+    document.getElementById('miniVideo').srcObject = localStream;
+});
+document.getElementById('btnEnd').addEventListener('click', ()=>{
+    if(peerConnection) peerConnection.close();
+    localStream.getTracks().forEach(track=>track.stop());
+    window.location.reload();
+});
+</script>
+
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>ВидеочатРК</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
