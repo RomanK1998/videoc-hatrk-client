@@ -2,134 +2,154 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Видеочат РК</title>
+<title>ВидеочатРК</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <style>
-body { font-family: Arial; text-align:center; margin:0; background:#000; color:#fff; }
-h1 { color:red; margin:10px 0; }
-.video-container { display:inline-block; width:45vw; height:40vh; margin:5px; position:relative; border:3px solid red; background:#000; overflow:hidden; }
+body { background:black; color:white; font-family:Arial; margin:0; padding:0; }
+h1 { color:red; text-align:center; margin:10px 0; }
+#userList { padding:10px; max-width:300px; }
+#contacts li { cursor:pointer; padding:5px; border-bottom:1px solid #333; }
+#contacts li:hover { background:#222; }
+.video-container { display:inline-block; width:45vw; height:40vh; margin:5px; border:2px solid red; position:relative; }
 video { width:100%; height:100%; object-fit:cover; }
-#contacts { max-height:300px; overflow-y:auto; margin:10px auto; width:90%; text-align:left; }
-.contact { display:flex; justify-content:space-between; padding:5px; border-bottom:1px solid #444; }
-.contact button { background:red; color:#fff; border:none; padding:4px 8px; cursor:pointer; }
-.contact button[disabled] { background:#555; cursor:not-allowed; }
-#reconnectOverlay { display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); color:white; font-size:18px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.controls { text-align:center; margin:10px; }
+button { padding:8px 12px; margin:5px; border:none; border-radius:5px; }
+button.red { background:red; color:white; }
+button.green { background:green; color:white; }
 </style>
 <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
 </head>
 <body>
 <h1>Видеочат РК</h1>
 
-<div>
-<input id="usernameInput" placeholder="Введите имя">
-<button onclick="registerUser()">Зарегистрироваться</button>
+<div id="registerDiv">
+  <input type="text" id="usernameInput" placeholder="Ваше имя">
+  <button id="btnRegister">Зарегистрироваться</button>
 </div>
 
-<div id="contacts"></div>
-
-<div class="video-container" id="localContainer">
-    <video id="localVideo" autoplay playsinline muted></video>
-</div>
-<div class="video-container" id="remoteContainer">
-    <video id="remoteVideo" autoplay playsinline></video>
+<div id="userList" style="display:none;">
+  <h2>Контакты</h2>
+  <ul id="contacts"></ul>
 </div>
 
-<div id="reconnectOverlay">
-    <div>Переподключение…</div>
+<div class="video-container">
+  <video id="localVideo" autoplay playsinline muted></video>
+</div>
+<div class="video-container">
+  <video id="remoteVideo" autoplay playsinline></video>
+</div>
+
+<div class="controls">
+  <button id="btnEnd" class="red">Завершить звонок</button>
 </div>
 
 <script>
-const socket = io('http://localhost:3000'); // заменить на ваш сервер
-let localStream, remoteStream, peerConnection;
-let myId, currentRoom;
+const socket = io('https://videoc-hatrk-server.onrender.com');
+let localStream, remoteStream;
+let peerConnection;
+let myId;
 
-async function registerUser() {
-    const username = document.getElementById('usernameInput').value.trim();
-    if (!username) return alert("Введите имя");
-    socket.emit("register", { username });
-}
-socket.on("registered", user => { myId = user.id; startLocalStream(); });
-socket.on("update-users", users => renderContacts(users));
-
-async function startLocalStream() {
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-        document.getElementById('localVideo').srcObject = localStream;
-    } catch(e){ console.error(e); }
-}
-
-function renderContacts(users) {
-    const contactsDiv = document.getElementById('contacts');
-    contactsDiv.innerHTML = '';
-    users.filter(u=>u.id!==myId).forEach(u=>{
-        const div = document.createElement('div'); div.className='contact';
-        const status = u.inCallWith ? 'в звонке' : 'свободен';
-        const btn = document.createElement('button');
-        btn.textContent = u.inCallWith ? 'Присоединиться' : 'Позвонить';
-        btn.disabled = false;
-        btn.onclick = ()=>callUser(u.id);
-        div.innerHTML=`${u.username} (${status})`;
-        div.appendChild(btn);
-        contactsDiv.appendChild(div);
-    });
-}
-
-function callUser(toId) {
-    socket.emit("call-user", { toId });
-}
-
-socket.on("incoming-call", ({fromId, fromName, roomId})=>{
-    if(confirm(`${fromName} звонит. Присоединиться?`)){
-        currentRoom = roomId;
-        socket.emit("accept-call", { roomId });
-        createPeerConnection();
+// ===== Регистрация =====
+document.getElementById('btnRegister').onclick = async () => {
+  const username = document.getElementById('usernameInput').value.trim();
+  if(!username) return alert("Введите имя!");
+  socket.emit("register", username, (res) => {
+    if(res.success){
+      myId = res.id;
+      document.getElementById('registerDiv').style.display = "none";
+      document.getElementById('userList').style.display = "block";
+      startLocalStream();
     }
+  });
+};
+
+// ===== Список контактов =====
+socket.on("update-users", users => {
+  const list = document.getElementById("contacts");
+  list.innerHTML = "";
+  users.forEach(user => {
+    if(user.id === myId) return;
+    const li = document.createElement("li");
+    li.textContent = `${user.username} (${user.status})`;
+    li.style.color = user.status==="busy"?"red":"green";
+    li.onclick = () => {
+      if(user.status==="online") callUser(user.id);
+      else if(user.status==="busy") alert(`${user.username} занят. Можно переключиться после завершения текущего звонка.`);
+    };
+    list.appendChild(li);
+  });
 });
 
-socket.on("user-busy", ({fromId, fromName})=>{
-    if(confirm(`${fromName} уже в звонке. Переподключиться и завершить текущий?`)){
-        currentRoom = `room-${fromId}-${myId}`;
-        socket.emit("accept-call", { roomId: currentRoom });
-        createPeerConnection();
-    }
-});
-
-// ======= WebRTC =======
-const config = { iceServers:[{urls:'stun:stun.l.google.com:19302'}] };
-function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(config);
-    if(localStream) localStream.getTracks().forEach(t=>peerConnection.addTrack(t, localStream));
-
-    peerConnection.ontrack = e => { document.getElementById('remoteVideo').srcObject = e.streams[0]; };
-    peerConnection.onicecandidate = e => { if(e.candidate) socket.emit('ice-candidate', e.candidate); };
-
-    if(currentRoom) createOffer();
+// ===== Локальное видео =====
+async function startLocalStream(){
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
+    document.getElementById('localVideo').srcObject = localStream;
+  } catch(e){ console.error(e); }
 }
 
-async function createOffer() {
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer);
+// ===== Вызов =====
+async function callUser(targetId){
+  peerConnection = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
+
+  peerConnection.ontrack = e => {
+    document.getElementById('remoteVideo').srcObject = e.streams[0];
+  };
+
+  peerConnection.onicecandidate = e => {
+    if(e.candidate) socket.emit("ice-candidate", targetId, e.candidate);
+  };
+
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit("call-user", targetId, offer);
 }
 
-socket.on('offer', async offer=>{
-    if(!peerConnection) createPeerConnection();
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', answer);
+// ===== Принятие звонка =====
+socket.on("incoming-call", async (fromId, offer, username) => {
+  if(peerConnection) peerConnection.close();
+  peerConnection = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
+
+  peerConnection.ontrack = e => document.getElementById('remoteVideo').srcObject = e.streams[0];
+  peerConnection.onicecandidate = e => { if(e.candidate) socket.emit("ice-candidate", fromId, e.candidate); };
+
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  socket.emit("answer-call", fromId, answer);
 });
 
-socket.on('answer', async answer=>{
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+// ===== Ответ на звонок =====
+socket.on("call-answered", async (answer) => {
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 });
 
-socket.on('ice-candidate', async candidate=>{
-    try{ await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e){console.error(e);}
+// ===== ICE кандидаты =====
+socket.on("ice-candidate", async (candidate) => {
+  try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e){console.error(e);}
 });
 
-socket.on('disconnect', ()=>{ document.getElementById('reconnectOverlay').style.display='flex'; });
-socket.on('connect', ()=>{ document.getElementById('reconnectOverlay').style.display='none'; });
+// ===== Завершение звонка =====
+document.getElementById('btnEnd').onclick = () => {
+  if(peerConnection) peerConnection.close();
+  peerConnection = null;
+  socket.emit("end-call");
+  document.getElementById('remoteVideo').srcObject = null;
+};
+
+socket.on("call-ended", () => {
+  if(peerConnection) peerConnection.close();
+  peerConnection = null;
+  document.getElementById('remoteVideo').srcObject = null;
+  alert("Звонок завершён.");
+});
+
+// ===== Уведомление если пользователь занят =====
+socket.on("user-busy", (targetId) => {
+  alert("Пользователь занят, попробуйте позже.");
+});
 </script>
 </body>
 </html>
