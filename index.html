@@ -3,409 +3,153 @@
 <head>
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
-<link rel="icon" type="image/png" href="значок.png">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-    body, html {
-        margin: 0;
-        padding: 0;
-        font-family: Arial, sans-serif;
-        background: #000;
-        height: 100vh;
-        overflow: hidden;
-    }
-
-    /* Основное видео */
-    #mainContainer {
-        position: fixed;
-        top: 0; left: 0;
-        width: 100%;
-        height: 100%;
-        background: black;
-    }
-    #mainVideo {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    /* Мини-видео */
-    #miniContainer {
-        position: fixed;
-        bottom: 100px;
-        right: 20px;
-        width: 120px;
-        height: 160px;
-        border-radius: 8px;
-        overflow: hidden;
-        border: 2px solid #25D366;
-        z-index: 10;
-        cursor: move;
-        touch-action: none;
-        background: black;
-    }
-    #miniVideo {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    /* Кнопки в стиле WhatsApp */
-    .controls {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 20px;
-        z-index: 20;
-    }
-    .btn {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        border: none;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        color: white;
-        background: #128C7E;
-    }
-    .btn.red { background: #D93025; }
-    .btn:active { transform: scale(0.9); }
-</style>
-<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
-</head>
-<body>
-
-<div id="mainContainer">
-    <video id="mainVideo" autoplay playsinline></video>
-</div>
-
-<div id="miniContainer">
-    <video id="miniVideo" autoplay playsinline muted></video>
-</div>
-
-<div class="controls">
-    <button id="btnMic" class="btn">🎤</button>
-    <button id="btnCam" class="btn">📷</button>
-    <button id="btnSwitch" class="btn">🔄</button>
-    <button id="btnEnd" class="btn red">📞</button>
-</div>
-
-<script>
-const socket = io('https://videoc-hatrk-server.onrender.com'); // ваш сервер
-let localStream, peerConnection;
-let isMicOn = true, isCamOn = true;
-let usingFrontCam = true;
-
-const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-
-// ===== Локальный поток =====
-async function startLocalStream() {
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: usingFrontCam ? "user" : "environment" },
-            audio: true 
-        });
-        document.getElementById('miniVideo').srcObject = localStream;
-    } catch (e) {
-        console.error("Ошибка доступа к камере/микрофону", e);
-    }
-}
-
-// ===== PeerConnection =====
-async function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(config);
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-    peerConnection.ontrack = event => {
-        document.getElementById('mainVideo').srcObject = event.streams[0];
-    };
-
-    peerConnection.onicecandidate = event => {
-        if(event.candidate) socket.emit('ice-candidate', event.candidate);
-    };
-}
-
-// ===== Socket.io события =====
-socket.on('offer', async offer => {
-    if(!peerConnection) await createPeerConnection();
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', answer);
-});
-
-socket.on('answer', async answer => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-});
-
-socket.on('ice-candidate', async candidate => {
-    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } 
-    catch(e){ console.error(e); }
-});
-
-// ===== Создание оффера =====
-async function createOffer() {
-    if(!peerConnection) await createPeerConnection();
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer);
-}
-
-// ===== Запуск =====
-startLocalStream().then(()=>setTimeout(createOffer, 1000));
-
-// ===== Мини-видео управление =====
-(function enableMiniControls() {
-    const mini = document.getElementById("miniContainer");
-    const mainVideo = document.getElementById("mainVideo");
-    const miniVideo = document.getElementById("miniVideo");
-    let dragging = false, offsetX=0, offsetY=0;
-
-    function startDrag(x,y){ dragging=true; offsetX=x-mini.getBoundingClientRect().left; offsetY=y-mini.getBoundingClientRect().top; mini.style.transition="none";}
-    function dragMove(x,y){ if(!dragging) return; mini.style.left=`${x-offsetX}px`; mini.style.top=`${y-offsetY}px`; }
-    function endDrag(){ dragging=false; mini.style.transition="all 0.2s"; }
-
-    mini.addEventListener("mousedown", e=>startDrag(e.clientX,e.clientY));
-    document.addEventListener("mousemove", e=>dragMove(e.clientX,e.clientY));
-    document.addEventListener("mouseup", endDrag);
-
-    mini.addEventListener("touchstart", e=>{ const t=e.touches[0]; startDrag(t.clientX,t.clientY); }, {passive:true});
-    document.addEventListener("touchmove", e=>{ const t=e.touches[0]; dragMove(t.clientX,t.clientY); }, {passive:true});
-    document.addEventListener("touchend", endDrag);
-
-    mini.addEventListener("click", ()=>{
-        const tmp = mainVideo.srcObject;
-        mainVideo.srcObject = miniVideo.srcObject;
-        miniVideo.srcObject = tmp;
-    });
-})();
-
-// ===== Кнопки =====
-document.getElementById('btnMic').addEventListener('click', ()=>{
-    isMicOn = !isMicOn;
-    localStream.getAudioTracks().forEach(track=>track.enabled=isMicOn);
-});
-document.getElementById('btnCam').addEventListener('click', ()=>{
-    isCamOn = !isCamOn;
-    localStream.getVideoTracks().forEach(track=>track.enabled=isCamOn);
-});
-document.getElementById('btnSwitch').addEventListener('click', async ()=>{
-    usingFrontCam = !usingFrontCam;
-    const videoTrack = (await navigator.mediaDevices.getUserMedia({ video:{ facingMode: usingFrontCam?"user":"environment" } })).getVideoTracks()[0];
-    const sender = peerConnection.getSenders().find(s=>s.track.kind==='video');
-    sender.replaceTrack(videoTrack);
-    localStream.removeTrack(localStream.getVideoTracks()[0]);
-    localStream.addTrack(videoTrack);
-    document.getElementById('miniVideo').srcObject = localStream;
-});
-document.getElementById('btnEnd').addEventListener('click', ()=>{
-    if(peerConnection) peerConnection.close();
-    localStream.getTracks().forEach(track=>track.stop());
-    window.location.reload();
-});
-</script>
-
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<title>ВидеочатРК</title>
 <link rel="icon" type="image/png" href="favicon.png">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-    body, html {
-        margin: 0;
-        padding: 0;
-        background: black;
-        overflow: hidden;
-        font-family: Arial, sans-serif;
-    }
-
-    #mainVideo, #miniVideo {
-        object-fit: cover;
-        width: 100%;
-        height: 100%;
-    }
-
-    #mainContainer {
-        position: fixed;
-        top: 0; left: 0;
-        width: 100vw; height: 100vh;
-        background: black;
-    }
-
-    #miniContainer {
-        position: fixed;
-        bottom: 120px;
-        right: 20px;
-        width: 150px;
-        height: 120px;
-        border: 2px solid #25D366;
-        border-radius: 10px;
-        overflow: hidden;
-        z-index: 10;
-        cursor: move;
-        touch-action: none;
-        background: black;
-    }
-
-    .controls {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 20px;
-        z-index: 20;
-    }
-
-    .btn {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        border: none;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        color: white;
-        background: rgba(50,50,50,0.7);
-    }
-
-    .btn.red { background: red; }
-    .btn:active { transform: scale(0.9); }
+body { background:black; color:white; font-family:Arial; margin:0; padding:0; }
+h1 { color:red; text-align:center; margin:10px 0; }
+#userList { padding:10px; max-width:300px; }
+#contacts li { cursor:pointer; padding:5px; border-bottom:1px solid #333; }
+#contacts li:hover { background:#222; }
+.video-container { display:inline-block; width:45vw; height:40vh; margin:5px; border:2px solid red; position:relative; }
+video { width:100%; height:100%; object-fit:cover; }
+.controls { text-align:center; margin:10px; }
+button { padding:8px 12px; margin:5px; border:none; border-radius:5px; }
+button.red { background:red; color:white; }
+button.green { background:green; color:white; }
 </style>
 <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
 </head>
 <body>
+<h1>Видеочат РК</h1>
 
-<div id="mainContainer">
-    <video id="mainVideo" autoplay playsinline></video>
+<div id="registerDiv">
+  <input type="text" id="usernameInput" placeholder="Ваше имя">
+  <button id="btnRegister">Зарегистрироваться</button>
 </div>
 
-<div id="miniContainer">
-    <video id="miniVideo" autoplay playsinline muted></video>
+<div id="userList" style="display:none;">
+  <h2>Контакты</h2>
+  <ul id="contacts"></ul>
+</div>
+
+<div class="video-container">
+  <video id="localVideo" autoplay playsinline muted></video>
+</div>
+<div class="video-container">
+  <video id="remoteVideo" autoplay playsinline></video>
 </div>
 
 <div class="controls">
-    <button id="btnMic" class="btn">🎤</button>
-    <button id="btnCam" class="btn">📷</button>
-    <button id="btnSwitch" class="btn">🔄</button>
-    <button id="btnEnd" class="btn red">📞</button>
+  <button id="btnEnd" class="red">Завершить звонок</button>
 </div>
 
 <script>
 const socket = io('https://videoc-hatrk-server.onrender.com');
-let localStream, peerConnection;
-let isMicOn = true, isCamOn = true;
-let usingFrontCam = true;
-const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+let localStream, remoteStream;
+let peerConnection;
+let myId;
 
-async function startLocalStream() {
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: usingFrontCam ? "user" : "environment" },
-            audio: true 
-        });
-        document.getElementById('miniVideo').srcObject = localStream;
-    } catch (error) {
-        console.error('Ошибка доступа к медиа:', error);
+// ===== Регистрация =====
+document.getElementById('btnRegister').onclick = async () => {
+  const username = document.getElementById('usernameInput').value.trim();
+  if(!username) return alert("Введите имя!");
+  socket.emit("register", username, (res) => {
+    if(res.success){
+      myId = res.id;
+      document.getElementById('registerDiv').style.display = "none";
+      document.getElementById('userList').style.display = "block";
+      startLocalStream();
     }
-}
+  });
+};
 
-async function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(config);
-    if (localStream) localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-    peerConnection.ontrack = e => {
-        document.getElementById('mainVideo').srcObject = e.streams[0];
+// ===== Список контактов =====
+socket.on("update-users", users => {
+  const list = document.getElementById("contacts");
+  list.innerHTML = "";
+  users.forEach(user => {
+    if(user.id === myId) return;
+    const li = document.createElement("li");
+    li.textContent = `${user.username} (${user.status})`;
+    li.style.color = user.status==="busy"?"red":"green";
+    li.onclick = () => {
+      if(user.status==="online") callUser(user.id);
+      else if(user.status==="busy") alert(`${user.username} занят. Можно переключиться после завершения текущего звонка.`);
     };
+    list.appendChild(li);
+  });
+});
 
-    peerConnection.onicecandidate = e => {
-        if (e.candidate) socket.emit('ice-candidate', e.candidate);
-    };
+// ===== Локальное видео =====
+async function startLocalStream(){
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
+    document.getElementById('localVideo').srcObject = localStream;
+  } catch(e){ console.error(e); }
 }
 
-socket.on('offer', async offer => {
-    if (!peerConnection) await createPeerConnection();
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', answer);
-});
+// ===== Вызов =====
+async function callUser(targetId){
+  peerConnection = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
 
-socket.on('answer', async answer => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-});
+  peerConnection.ontrack = e => {
+    document.getElementById('remoteVideo').srcObject = e.streams[0];
+  };
 
-socket.on('ice-candidate', async candidate => {
-    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } 
-    catch(e){ console.error(e); }
-});
+  peerConnection.onicecandidate = e => {
+    if(e.candidate) socket.emit("ice-candidate", targetId, e.candidate);
+  };
 
-async function createOffer() {
-    if (!peerConnection) await createPeerConnection();
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('offer', offer);
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit("call-user", targetId, offer);
 }
 
-startLocalStream().then(() => setTimeout(createOffer, 2000));
+// ===== Принятие звонка =====
+socket.on("incoming-call", async (fromId, offer, username) => {
+  if(peerConnection) peerConnection.close();
+  peerConnection = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
 
-/* Перетаскивание миниатюры и смена мест */
-(function(){
-    const mini = document.getElementById("miniContainer");
-    const mainVideo = document.getElementById("mainVideo");
-    const miniVideo = document.getElementById("miniVideo");
-    let isDragging=false, offsetX=0, offsetY=0;
-    function startDrag(x,y){ isDragging=true; offsetX=x-mini.getBoundingClientRect().left; offsetY=y-mini.getBoundingClientRect().top; mini.style.transition="none"; }
-    function dragMove(x,y){ if(!isDragging)return; mini.style.left=`${x-offsetX}px`; mini.style.top=`${y-offsetY}px`; }
-    function endDrag(){ isDragging=false; mini.style.transition="all 0.2s"; }
+  peerConnection.ontrack = e => document.getElementById('remoteVideo').srcObject = e.streams[0];
+  peerConnection.onicecandidate = e => { if(e.candidate) socket.emit("ice-candidate", fromId, e.candidate); };
 
-    mini.addEventListener("mousedown", e=>startDrag(e.clientX,e.clientY));
-    document.addEventListener("mousemove", e=>dragMove(e.clientX,e.clientY));
-    document.addEventListener("mouseup", endDrag);
-    mini.addEventListener("touchstart", e=>startDrag(e.touches[0].clientX,e.touches[0].clientY), {passive:true});
-    document.addEventListener("touchmove", e=>dragMove(e.touches[0].clientX,e.touches[0].clientY), {passive:true});
-    document.addEventListener("touchend", endDrag);
-
-    mini.addEventListener("click", ()=>{
-        const temp=mainVideo.srcObject;
-        mainVideo.srcObject=miniVideo.srcObject;
-        miniVideo.srcObject=temp;
-    });
-})();
-
-/* Кнопки управления */
-document.getElementById('btnMic').addEventListener('click', ()=>{
-    isMicOn = !isMicOn;
-    localStream.getAudioTracks().forEach(track=>track.enabled=isMicOn);
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  socket.emit("answer-call", fromId, answer);
 });
-document.getElementById('btnCam').addEventListener('click', ()=>{
-    isCamOn = !isCamOn;
-    localStream.getVideoTracks().forEach(track=>track.enabled=isCamOn);
+
+// ===== Ответ на звонок =====
+socket.on("call-answered", async (answer) => {
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 });
-document.getElementById('btnSwitch').addEventListener('click', async ()=>{
-    usingFrontCam = !usingFrontCam;
-    const videoTrack = (await navigator.mediaDevices.getUserMedia({ video:{ facingMode:usingFrontCam?"user":"environment" } })).getVideoTracks()[0];
-    const sender = peerConnection.getSenders().find(s=>s.track.kind==='video');
-    sender.replaceTrack(videoTrack);
-    localStream.removeTrack(localStream.getVideoTracks()[0]);
-    localStream.addTrack(videoTrack);
-    document.getElementById('miniVideo').srcObject = localStream;
+
+// ===== ICE кандидаты =====
+socket.on("ice-candidate", async (candidate) => {
+  try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e){console.error(e);}
 });
-document.getElementById('btnEnd').addEventListener('click', ()=>{
-    if(peerConnection) peerConnection.close();
-    if(localStream) localStream.getTracks().forEach(t=>t.stop());
-    window.location.reload();
+
+// ===== Завершение звонка =====
+document.getElementById('btnEnd').onclick = () => {
+  if(peerConnection) peerConnection.close();
+  peerConnection = null;
+  socket.emit("end-call");
+  document.getElementById('remoteVideo').srcObject = null;
+};
+
+socket.on("call-ended", () => {
+  if(peerConnection) peerConnection.close();
+  peerConnection = null;
+  document.getElementById('remoteVideo').srcObject = null;
+  alert("Звонок завершён.");
+});
+
+// ===== Уведомление если пользователь занят =====
+socket.on("user-busy", (targetId) => {
+  alert("Пользователь занят, попробуйте позже.");
 });
 </script>
-
 </body>
 </html>
