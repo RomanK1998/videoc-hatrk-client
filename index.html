@@ -49,29 +49,13 @@ let localStream, remoteStream;
 let peerConnection;
 let myId;
 
-// ===== Проверяем localStorage для автологина =====
-const savedUserId = localStorage.getItem("userId");
-if(savedUserId){
-  socket.emit("register", {username:null, userId:savedUserId}, (res)=>{
-    if(res.success){
-      myId = res.id;
-      document.getElementById('usernameInput').value = res.username;
-      document.getElementById('registerDiv').style.display = "none";
-      document.getElementById('userList').style.display = "block";
-      startLocalStream();
-    }
-  });
-}
-
 // ===== Регистрация =====
 document.getElementById('btnRegister').onclick = async () => {
   const username = document.getElementById('usernameInput').value.trim();
   if(!username) return alert("Введите имя!");
-  socket.emit("register", {username, userId:null}, (res)=>{
+  socket.emit("register", username, (res) => {
     if(res.success){
       myId = res.id;
-      localStorage.setItem("userId", res.id); // сохраняем ID для автологина
-      document.getElementById('usernameInput').value = res.username;
       document.getElementById('registerDiv').style.display = "none";
       document.getElementById('userList').style.display = "block";
       startLocalStream();
@@ -84,7 +68,7 @@ socket.on("update-users", users => {
   const list = document.getElementById("contacts");
   list.innerHTML = "";
   users.forEach(user => {
-    if(user.id === myId) return;
+    if(user.id === myId) return; // НЕ показываем себя
     const li = document.createElement("li");
     li.textContent = `${user.username} (${user.status})`;
     li.style.color = user.status==="busy"?"red":"green";
