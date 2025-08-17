@@ -3,134 +3,272 @@
 <head>
 <meta charset="UTF-8">
 <title>ВидеочатРК</title>
-<link rel="icon" href="значок.png">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="favicon.png?v=3">
 <style>
-/* Стили аналогично предыдущему коду */
-body, html { margin:0; padding:0; background:black; font-family:Arial,sans-serif; }
-#mainContainer { position:fixed; top:0; left:0; width:100vw; height:100vh; background:black; }
-#mainVideo { width:100%; height:100%; object-fit:cover; }
-#miniContainer { position:fixed; bottom:100px; right:20px; width:200px; height:150px; border:2px solid red; background:black; border-radius:8px; overflow:hidden; z-index:10; cursor:move; touch-action:none; }
-#miniVideo { width:100%; height:100%; object-fit:cover; }
-.controls { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:15px; z-index:20; }
-.btn { width:50px; height:50px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; font-size:22px; color:white; background:rgba(50,50,50,0.7); }
-.btn.red { background:red; }
-.btn:active { transform:scale(0.9); }
+    body {
+        background-color: black;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin: 0;
+        padding: 0;
+    }
+    h1 {
+        color: red;
+        margin: 10px 0;
+    }
+    .video-container {
+        position: relative;
+        display: inline-block;
+        border: 3px solid red;
+        background: black;
+        margin: 5px;
+        vertical-align: top;
+        width: 45vw;
+        height: 40vh;
+        overflow: hidden;
+    }
+    /* Для экранов шире 1024px (ноутбуки и десктопы) */
+    @media (min-width: 1024px) {
+        .video-container {
+            width: 35vw;
+            height: 75vh;
+        }
+    }
+    /* Для маленьких экранов (телефоны) */
+    @media (max-width: 768px) {
+        .video-container {
+            width: 90vw;
+            height: 50vh;
+            display: block;
+            margin: 10px auto;
+        }
+    }
+    video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .speed-indicator {
+        position: absolute;
+        top: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.85);
+        border-left: 3px solid red;
+        border-bottom: 3px solid red;
+        color: red;
+        font-size: 12px;
+        padding: 2px 6px;
+        line-height: 1.2;
+    }
 </style>
 <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
 </head>
 <body>
+<h1>Видеочат РК</h1>
 
-<div>
-  <input id="inputName" placeholder="Ваше имя">
-  <input id="inputRoom" placeholder="ID комнаты">
-  <button id="btnJoin">Войти</button>
+<div class="video-container" id="localContainer">
+    <video id="localVideo" autoplay playsinline muted></video>
+    <div class="speed-indicator" id="speed-local">0 КБ/с</div>
 </div>
 
-<div id="mainContainer"><video id="mainVideo" autoplay playsinline></video></div>
-<div id="miniContainer"><video id="miniVideo" autoplay playsinline muted></video></div>
-<div class="controls">
-  <button id="btnMic" class="btn">🎤</button>
-  <button id="btnCam" class="btn">📷</button>
-  <button id="btnSwitch" class="btn">🔄</button>
-  <button id="btnEnd" class="btn red">📞</button>
+<div class="video-container" id="remoteContainer">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <div id="reconnectOverlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); color:white; font-size:18px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+        <div>Переподключение…</div>
+        <div id="reconnectStatus" style="font-size:14px; margin-top:8px; color:#ccc;">Ожидание соединения</div>
+    </div>
+    <div class="speed-indicator" id="speed-remote">0 КБ/с</div>
 </div>
 
 <script>
-let socket, localStream, peerConnection, usingFrontCam = true;
-let isMicOn = true, isCamOn = true;
-let roomID, name;
+const socket = io('https://videoc-hatrk-server.onrender.com');
+let localStream;
+let remoteStream;
+let peerConnection;
 
-const config = { 
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'turn:turn.openrelay.metered.live:443', username: 'openrelayproject', credential: 'openrelayprojectsecret' }
-  ]
+const config = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 };
 
-document.getElementById('btnJoin').onclick = async () => {
-  name = document.getElementById('inputName').value || "Гость";
-  roomID = document.getElementById('inputRoom').value || "1";
-  socket = io('https://videoc-hatrk-server.onrender.com');
+async function startLocalStream() {
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById('localVideo').srcObject = localStream;
+    } catch (error) {
+        console.error('Ошибка доступа к медиа:', error);
+    }
+}
 
-  socket.on('connect', () => console.log('Socket connected', socket.id));
-  socket.emit('join-room', { roomID, name });
+async function createPeerConnection() {
+    // Создаём новый PeerConnection (предполагается, что любые старые ПК уже закрыты в restartConnection)
+    peerConnection = new RTCPeerConnection(config);
 
-  socket.on('existing-users', users => {
-    users.forEach(u => console.log('Существующий пользователь:', u));
-  });
+    // Добавляем локальные треки, если они есть
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+    }
 
-  socket.on('offer', async ({ from, offer }) => {
-    if(!peerConnection) await createPeerConnection();
+    // Назначаем удалённый поток напрямую из события ontrack (чтобы не дублировать треки)
+    peerConnection.ontrack = event => {
+        // Берём первый доступный stream отдалённого участника и назначаем в элемент
+        const remoteVid = document.getElementById('remoteVideo');
+        if (event.streams && event.streams[0]) {
+            remoteVid.srcObject = event.streams[0];
+        } else {
+            // Фоллбек — собираем треки в новый MediaStream
+            const fallbackStream = new MediaStream();
+            event.track && fallbackStream.addTrack(event.track);
+            remoteVid.srcObject = fallbackStream;
+        }
+    };
+
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            socket.emit('ice-candidate', event.candidate);
+        }
+    };
+
+    // Запуск замера скорости отдельно для локального и удалённого потока
+    measureConnectionSpeed(peerConnection, "speed-local", "outbound-rtp");
+    measureConnectionSpeed(peerConnection, "speed-remote", "inbound-rtp");
+}
+
+// Получение оффера
+socket.on('offer', async offer => {
+    // Если PeerConnection уже есть — переиспользуем, иначе создаём новый
+    if (!peerConnection) {
+        await createPeerConnection();
+    }
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
-    socket.emit('answer', { roomID, answer });
-  });
+    socket.emit('answer', answer);
+});
 
-  socket.on('answer', async ({ from, answer }) => {
+// Получение ответа
+socket.on('answer', async answer => {
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-  });
+});
 
-  socket.on('ice-candidate', async ({ from, candidate }) => {
-    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } 
-    catch(e){ console.error(e); }
-  });
+// Получение ICE-кандидата
+socket.on('ice-candidate', async candidate => {
+    try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (error) {
+        console.error('Ошибка добавления ICE-кандидата:', error);
+    }
+});
 
-  await startLocalStream();
-  await createPeerConnection();
-  createOffer();
-};
-
-async function startLocalStream(){
-  localStream = await navigator.mediaDevices.getUserMedia({ video:{facingMode:usingFrontCam?"user":"environment"}, audio:true });
-  document.getElementById('miniVideo').srcObject = localStream;
+// Создание оффера
+async function createOffer() {
+    // Создаём PeerConnection если отсутствует
+    if (!peerConnection) {
+        await createPeerConnection();
+    }
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('offer', offer);
 }
 
-async function createPeerConnection(){
-  peerConnection = new RTCPeerConnection(config);
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-  peerConnection.ontrack = e => { document.getElementById('mainVideo').srcObject = e.streams[0]; };
-  peerConnection.onicecandidate = e => { if(e.candidate) socket.emit('ice-candidate', { roomID, candidate:e.candidate }); };
+// Запуск соединения
+startLocalStream().then(() => {
+    setTimeout(createOffer, 2000);
+});
+
+// ======= Функции замера скорости =======
+function measureConnectionSpeed(pc, elementId, directionType) {
+    let previousBytes = 0;
+    setInterval(async () => {
+        try {
+            const stats = await pc.getStats();
+            let bytesNow = 0;
+            stats.forEach(report => {
+                if (report.type === directionType && !report.isRemote) {
+                    if (directionType === "outbound-rtp" && report.bytesSent) {
+                        bytesNow += report.bytesSent;
+                    }
+                    if (directionType === "inbound-rtp" && report.bytesReceived) {
+                        bytesNow += report.bytesReceived;
+                    }
+                }
+            });
+            const bytesPerSecond = bytesNow - previousBytes;
+            previousBytes = bytesNow;
+            updateSpeedIndicator(elementId, bytesPerSecond);
+        } catch (e) {
+            console.error("Ошибка измерения скорости:", e);
+        }
+    }, 1000);
 }
 
-async function createOffer(){
-  const offer = await peerConnection.createOffer();
-  await peerConnection.setLocalDescription(offer);
-  socket.emit('offer', { roomID, offer });
+function updateSpeedIndicator(elementId, bytesPerSecond) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    let speed;
+    if (bytesPerSecond >= 1000000) {
+        speed = (bytesPerSecond / 1000000).toFixed(1) + ' МБ/с';
+    } else if (bytesPerSecond >= 1000) {
+        speed = (bytesPerSecond / 1000).toFixed(0) + ' КБ/с';
+    } else {
+        speed = bytesPerSecond + ' Б/с';
+    }
+    el.textContent = speed;
 }
 
-// Миниатюра и кнопки
-(function enableMiniatureControls(){
-  const mini = document.getElementById("miniContainer");
-  const mainVideo = document.getElementById("mainVideo");
-  const miniVideo = document.getElementById("miniVideo");
-  let isDragging = false, offsetX=0, offsetY=0;
-  mini.addEventListener("mousedown", e=>{isDragging=true;offsetX=e.clientX-mini.offsetLeft;offsetY=e.clientY-mini.offsetTop; mini.style.transition="none";});
-  document.addEventListener("mousemove", e=>{if(isDragging){mini.style.left=(e.clientX-offsetX)+"px"; mini.style.top=(e.clientY-offsetY)+"px";}});
-  document.addEventListener("mouseup", ()=>{isDragging=false; mini.style.transition="all 0.2s";});
-  mini.addEventListener("touchstart", e=>{const t=e.touches[0]; isDragging=true; offsetX=t.clientX-mini.offsetLeft; offsetY=t.clientY-mini.offsetTop; mini.style.transition="none";}, {passive:true});
-  document.addEventListener("touchmove", e=>{const t=e.touches[0]; if(isDragging){mini.style.left=(t.clientX-offsetX)+"px"; mini.style.top=(t.clientY-offsetY)+"px";}}, {passive:true});
-  document.addEventListener("touchend", ()=>{isDragging=false; mini.style.transition="all 0.2s";});
-  mini.addEventListener("click", ()=>{const temp=mainVideo.srcObject; mainVideo.srcObject=miniVideo.srcObject; miniVideo.srcObject=temp;});
-})();
+// === ЛОГИКА АВТОВОССТАНОВЛЕНИЯ СОЕДИНЕНИЯ ===
+socket.on('connect', async () => {
+    console.log("Подключено к серверу — пересоздаём соединение...");
+    await restartConnection();
+});
 
-document.getElementById('btnMic').onclick = ()=>{isMicOn=!isMicOn; localStream.getAudioTracks().forEach(t=>t.enabled=isMicOn);};
-document.getElementById('btnCam').onclick = ()=>{isCamOn=!isCamOn; localStream.getVideoTracks().forEach(t=>t.enabled=isCamOn);};
-document.getElementById('btnSwitch').onclick = async ()=>{
-  usingFrontCam = !usingFrontCam;
-  const videoTrack = (await navigator.mediaDevices.getUserMedia({ video:{facingMode:usingFrontCam?"user":"environment"} })).getVideoTracks()[0];
-  const sender = peerConnection.getSenders().find(s=>s.track.kind==='video');
-  sender.replaceTrack(videoTrack);
-  localStream.removeTrack(localStream.getVideoTracks()[0]);
-  localStream.addTrack(videoTrack);
-  document.getElementById('miniVideo').srcObject = localStream;
+async function restartConnection() {
+    console.log("Перезапуск соединения...");
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    await startLocalStream();
+    await createOffer();
+}
+
+
+// === Показ/скрытие оверлея переподключения ===
+function showReconnectOverlay(statusText) {
+    const overlay = document.getElementById('reconnectOverlay');
+    const statusEl = document.getElementById('reconnectStatus');
+    if (overlay) overlay.style.display = 'flex';
+    if (statusEl && statusText) statusEl.textContent = statusText;
+}
+function hideReconnectOverlay() {
+    const overlay = document.getElementById('reconnectOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+// Подписка на события сокета
+socket.on('connect', () => {
+    hideReconnectOverlay();
+});
+
+socket.on('disconnect', () => {
+    showReconnectOverlay('Ожидание соединения');
+});
+
+// Обновляем статус в процессе рестарта
+const originalRestartConnection = restartConnection;
+restartConnection = async function() {
+    showReconnectOverlay('Переподключение…');
+    await originalRestartConnection.apply(this, arguments);
+    hideReconnectOverlay();
 };
-document.getElementById('btnEnd').onclick = ()=>{
-  if(peerConnection) peerConnection.close();
-  if(localStream) localStream.getTracks().forEach(t=>t.stop());
-  window.location.reload();
-};
+
 </script>
 </body>
 </html>
